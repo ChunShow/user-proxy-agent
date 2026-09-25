@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { activeCalls, isActiveCall, listCalls, mergeCalls, refreshCall, stopCall } from './calls'
-import type { PhoneCall } from './calls'
+import { activeCalls, answerCall, isActiveCall, listCalls, mergeCalls, refreshCall, stopCall } from './calls'
+import type { CallConfirmation, PhoneCall } from './calls'
 import { ChatError } from './stream'
 
 export default function useCalls(conversationId: string | null, enabled: boolean) {
@@ -13,6 +13,7 @@ export default function useCalls(conversationId: string | null, enabled: boolean
   const revision = useRef(0)
   const mounted = useRef(false)
   const kick = useRef<() => void>(() => {})
+  const answerIds = useRef(new Map<string, { answer: string; id: string }>())
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   useEffect(() => {
     if (!enabled) return
@@ -73,10 +74,35 @@ export default function useCalls(conversationId: string | null, enabled: boolean
       if (mounted.current) { setPending([...pendingIds.current]); kick.current() }
     }
   }
+  async function answer(id: string, question: CallConfirmation, text: string) {
+    if (pendingIds.current.has(question.id)) return false
+    pendingIds.current.add(question.id); setPending([...pendingIds.current]); revision.current++
+    setActionErrors(previous => ({ ...previous, [id]: '' }))
+    let request = answerIds.current.get(question.id)
+    if (!request || request.answer !== text) {
+      request = { answer: text, id: crypto.randomUUID() }; answerIds.current.set(question.id, request)
+    }
+    try {
+      const updated = await answerCall(id, question, text, request.id)
+      if (mounted.current) setRecords(previous => {
+        const call = previous[id]
+        if (!call) return previous
+        return { ...previous, [id]: { ...call, confirmations: call.confirmations?.map(q => q.id === updated.id ? updated : q) } }
+      })
+      return true
+    } catch (cause) {
+      if (mounted.current) setActionErrors(previous => ({ ...previous, [id]: cause instanceof ChatError && cause.code === 'call_question_inactive'
+        ? '질문이 마감되어 답변을 전달하지 못했습니다.' : '답변 접수를 확인하지 못했습니다. 같은 답변으로 다시 시도해 주세요.' }))
+      return false
+    } finally {
+      revision.current++; pendingIds.current.delete(question.id)
+      if (mounted.current) { setPending([...pendingIds.current]); kick.current() }
+    }
+  }
   return {
     calls: Object.values(records).filter(c => c.conversation_id === conversationId),
     otherActive: activeIds.map(id => records[id]).filter(c => c && isActiveCall(c) && c.conversation_id !== conversationId),
-    error, actionErrors, pending,
+    error, actionErrors, pending, answer,
     stop: (id: string) => { void act(id, 'stop') },
     refresh: (id: string) => { void act(id, 'refresh') },
     reload: () => kick.current(),

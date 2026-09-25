@@ -151,3 +151,38 @@ test('hidden page pauses polling and resumes when visible', async ({ page }) => 
   })
   await expect.poll(() => reads).toBeGreaterThan(before)
 })
+
+test('live question restores and a targeted answer is sent without starting chat or dialing', async ({ page }) => {
+  const fixture = await phoneFixture(page)
+  const q = { id: '00000000-0000-4000-8000-000000000601', call_id: fixture.get().id,
+    delegation_id: 'd1', revision: 1, question: '화요일 오후 3시에 가능한가요?', options: ['가능해요', '어려워요'],
+    status: 'pending', answer: null as string | null, expires_at: Date.now() / 1000 + 60 }
+  let answers = 0
+  fixture.set({ confirmations: [q] } as Partial<ReturnType<typeof fixture.get>>)
+  await page.route('**/api/calls/*/confirmations/*/answer', async route => {
+    answers++
+    q.answer = route.request().postDataJSON().answer
+    q.status = 'answered'
+    fixture.set({ confirmations: [{ ...q }] } as Partial<ReturnType<typeof fixture.get>>)
+    await route.fulfill({ json: q })
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/?conversation=${cid}`)
+  await expect(page.getByText(q.question, { exact: true })).toBeVisible()
+  await page.screenshot({ path: '../docs/verification/step-06-question-mobile.png', fullPage: true })
+  await page.reload()
+  await page.getByRole('button', { name: '직접 답변하기', exact: true }).click()
+  const input = page.getByRole('textbox', { name: '메시지' })
+  await input.fill('화요일은 어렵고 수요일 오후가 좋아요')
+  await input.press('Enter')
+  await expect(page.getByText('통화에 전달 중', { exact: true })).toBeVisible()
+  expect(answers).toBe(1)
+  expect(fixture.mock.calls).toHaveLength(0)
+  expect(fixture.stops()).toBe(0)
+  q.status = 'applied'
+  fixture.set({ confirmations: [{ ...q }] } as Partial<ReturnType<typeof fixture.get>>)
+  await expect(page.getByText('통화 도우미에게 전달됨', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByText(q.answer!, { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})

@@ -9,6 +9,7 @@ import type { CallAction, ChatMessage } from './chat/types'
 import useChat from './chat/useChat'
 import useCalls from './chat/useCalls'
 import PhoneCallCard, { ActivePhoneCall } from './chat/PhoneCallCard'
+import type { CallConfirmation } from './chat/calls'
 
 export default function App() {
   const chat = useChat()
@@ -22,6 +23,8 @@ export default function App() {
   const [example, setExample] = useState<PreviewId>('connected')
   const [call, setCall] = useState(() => createPreview('connected'))
   const [target, setTarget] = useState(false)
+  const [replyTarget, setReplyTarget] = useState<{ callId: string; conversationId: string; question: CallConfirmation } | null>(null)
+  const currentReply = !preview && replyTarget?.conversationId === chat.selectedId ? replyTarget : null
   const input = useRef<HTMLTextAreaElement>(null)
   const callSurface = useRef<HTMLDivElement>(null)
   const previousExample = useRef(example)
@@ -46,6 +49,12 @@ export default function App() {
   }
   function submit(text: string) {
     if (!preview) {
+      if (currentReply) {
+        void phones.answer(currentReply.callId, currentReply.question, text).then(ok => {
+          if (ok) { setReplyTarget(previous => previous?.question.id === currentReply.question.id ? null : previous); setDraft('') }
+        })
+        return
+      }
       if (chat.send(text)) setDraft('')
       return
     }
@@ -62,14 +71,16 @@ export default function App() {
     loading={!preview && chat.loading} loadError={!preview ? chat.loadError : ''} onReload={chat.refresh}
     hasMoreMessages={!preview && Boolean(chat.messageCursor)} onMoreMessages={chat.loadMore} pageError={chat.pageError}
     remoteBusy={!preview && chat.remoteBusy}
-    afterMessage={preview ? undefined : id => phones.calls.filter(c => c.source_user_message_id === id).map(c => <li className="phone-message" key={c.id}><PhoneCallCard call={c} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]} /></li>)}
+    afterMessage={preview ? undefined : id => phones.calls.filter(c => c.source_user_message_id === id).map(c => <li className="phone-message" key={c.id}><PhoneCallCard call={c} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]}
+      onAnswer={(id, q, text) => { void phones.answer(id, q, text) }} answerPending={phones.pending}
+      onReply={(id, question) => { setReplyTarget({ callId: id, conversationId: c.conversation_id, question }); input.current?.focus() }} /></li>)}
     activeCall={phones.otherActive.map(c => <ActivePhoneCall key={c.id} call={c} onOpen={() => chat.open(c.conversation_id)} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]} />)}
     callError={phones.error && <div className="conversation-notice"><p role="status">{phones.error}</p><button type="button" onClick={phones.reload}>통화 상태 다시 불러오기</button></div>}
     onNavigate={next => {
     if (next) chat.stop()
     chat.navigate(next); setTarget(false)
-  }} composer={<Composer preview={preview} disabled={!preview && (!chat.ready || chat.loading || Boolean(chat.loadError) || chat.remoteBusy)} busy={!preview && chat.busy} onStop={chat.stop} value={draft} onChange={setDraft} inputRef={input}
-    targetLabel={preview && target ? call.subject : undefined} onClearTarget={() => { setTarget(false); input.current?.focus() }} onSubmit={submit} />}>
+  }} composer={<Composer preview={preview} disabled={!preview && (!chat.ready || chat.loading || Boolean(chat.loadError) || (currentReply ? phones.pending.includes(currentReply.question.id) : chat.remoteBusy))} busy={!preview && !currentReply && chat.busy} onStop={chat.stop} value={draft} onChange={setDraft} inputRef={input}
+    confirmationTarget={Boolean(currentReply)} targetLabel={currentReply?.question.question ?? (preview && target ? call.subject : undefined)} onClearTarget={() => { setTarget(false); setReplyTarget(null); input.current?.focus() }} onSubmit={submit} />}>
     {preview && <>
       <div className="preview-tools">
         <p className="preview-banner">예시 데이터 · 실제 전화가 연결되지 않습니다</p>

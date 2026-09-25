@@ -12,10 +12,11 @@ interface Props {
   disabled?: boolean
   onStop?: () => void
   targetLabel?: string
+  confirmationTarget?: boolean
   onClearTarget: () => void
 }
 
-export default function Composer({ value, onChange, onSubmit, inputRef, targetLabel, onClearTarget, preview = false, busy = false, disabled = false, onStop }: Props) {
+export default function Composer({ value, onChange, onSubmit, inputRef, targetLabel, confirmationTarget = false, onClearTarget, preview = false, busy = false, disabled = false, onStop }: Props) {
   const composing = useRef(false)
   useLayoutEffect(() => {
     const input = inputRef.current
@@ -28,7 +29,7 @@ export default function Composer({ value, onChange, onSubmit, inputRef, targetLa
   }
   return <div className="composer-dock">
     <form className="composer" onSubmit={event => { event.preventDefault(); submit() }}>
-      {targetLabel && <div className="composer-target"><span>{targetLabel}에 추가 지시 · 예시</span>
+      {targetLabel && <div className="composer-target"><span>{confirmationTarget ? `통화 질문에 답변 · ${targetLabel}` : `${targetLabel}에 추가 지시 · 예시`}</span>
         <button type="button" aria-label="지시 대상 해제" onClick={onClearTarget}><Icon name="close" /></button>
       </div>}
       <div className="composer-row">

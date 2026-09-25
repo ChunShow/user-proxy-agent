@@ -191,3 +191,13 @@
   .phone-card { padding: 16px; }
   .active-phone { padding: 12px 16px; }
 }
+
+.call-question { margin: 18px 0; padding: 16px 0 4px; border-top: 1px solid var(--border, #e5e5e5); }
+.call-question-caption { font-size: 12px; color: var(--muted, #676767); margin: 0 0 8px; }
+.call-question-text { font-size: 15px; line-height: 1.6; font-weight: 550; margin: 0 0 8px; overflow-wrap: anywhere; }
+.call-question-answer { margin: 10px 0; padding-left: 12px; border-left: 2px solid currentColor; overflow-wrap: anywhere; }
+.call-question-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
+.call-question-actions button { padding: 8px 12px; min-height: 40px; border: 1px solid var(--border, #dedede); border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.call-question-actions button:hover:not(:disabled) { background: var(--surface-hover, #f2f2f2); }
+.call-question-actions button:disabled { opacity: .45; cursor: wait; }
+.composer-target span { overflow-wrap: anywhere; min-width: 0; }

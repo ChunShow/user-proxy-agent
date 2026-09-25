@@ -1,6 +1,6 @@
 import Icon from '../components/Icon'
 import { isActiveCall } from './calls'
-import type { PhoneCall, PhoneStatus } from './calls'
+import type { CallConfirmation, PhoneCall, PhoneStatus } from './calls'
 
 const phoneLabels: Record<PhoneStatus, string> = {
   preparing: '통화 준비 중', dialing: '연결 중', connected: '통화 중', ending: '종료 확인 중',
@@ -11,8 +11,11 @@ export interface PhoneActions {
   onRefresh: (id: string) => void
   pending?: boolean
   error?: string
+  onAnswer?: (id: string, question: CallConfirmation, text: string) => void
+  onReply?: (id: string, question: CallConfirmation) => void
+  answerPending?: string[]
 }
-export default function PhoneCallCard({ call, onStop, onRefresh, pending, error }: PhoneActions & { call: PhoneCall }) {
+export default function PhoneCallCard({ call, onStop, onRefresh, pending, error, onAnswer, onReply, answerPending = [] }: PhoneActions & { call: PhoneCall }) {
   const active = isActiveCall(call)
   const ending = call.status === 'ending' || call.stop_requested
   const label = ending && active && call.status !== 'unknown' ? '종료 확인 중' : phoneLabels[call.status]
@@ -20,6 +23,20 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error 
     <div className="phone-heading"><h2><Icon name="phone" />{call.subject}</h2><span className={`phone-state phone-${call.status}`} role="status">{label}</span></div>
     <p className="phone-destination">{call.destination}</p>
     <p className="phone-purpose">{call.purpose}</p>
+    {call.confirmations?.map(question => {
+      const waiting = active && !ending && question.status === 'pending'
+      const labels = { pending: waiting ? '답변을 기다리고 있어요' : '질문 마감', answered: '통화에 전달 중', applied: '통화 도우미에게 전달됨', expired: '답변 시간이 지났어요', canceled: '질문 마감', failed: '통화에 반영하지 못했어요' }
+      return <div key={question.id} className="call-question" aria-label="통화 중 확인 질문">
+        <p className="call-question-caption">통화 중 확인이 필요해요</p>
+        <p className="call-question-text">{question.question}</p>
+        {question.answer && <p className="call-question-answer">{question.answer}</p>}
+        <p className="phone-note" role="status">{labels[question.status]}</p>
+        {waiting && <div className="call-question-actions">
+          {question.options.map(option => <button key={option} type="button" disabled={answerPending.includes(question.id)} onClick={() => onAnswer?.(call.id, question, option)}>{option}</button>)}
+          <button type="button" disabled={answerPending.includes(question.id)} onClick={() => onReply?.(call.id, question)}>직접 답변하기</button>
+        </div>}
+      </div>
+    })}
     {call.reported_summary && <div className="phone-result"><p className="phone-result-label">통화 도우미가 정리한 결과</p><p>{call.reported_summary}</p></div>}
     {call.outcome === 'model_reported_success' && <p className="phone-note">통화 도우미가 필요한 답을 재확인했다고 보고했습니다.</p>}
     {call.outcome === 'incomplete' && <p className="phone-note">확인하지 못한 내용이 남아 있습니다.</p>}
@@ -39,6 +56,7 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error 
 export function ActivePhoneCall({ call, onOpen, onStop, onRefresh, pending, error }: PhoneActions & { call: PhoneCall; onOpen: () => void }) {
   return <section className="active-phone" aria-label="진행 중인 통화">
     <div><span>{call.subject}</span><span className="phone-note" role="status">{call.stop_requested && call.status !== 'unknown' ? '종료 확인 중' : phoneLabels[call.status]}</span></div>
+    {call.confirmations?.some(q => q.status === 'pending') && <span role="status">확인할 질문이 도착했어요</span>}
     <div className="active-phone-actions"><button type="button" onClick={onOpen}>대화로 이동</button>
       {call.status !== 'unknown' && <button className="phone-stop" type="button" disabled={pending || call.stop_requested || call.status === 'ending'} onClick={() => onStop(call.id)}>통화 종료</button>}
       {(error || call.error_code) && <button type="button" disabled={pending} onClick={() => onRefresh(call.id)}>다시 확인</button>}
