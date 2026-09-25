@@ -1,17 +1,18 @@
 :root {
   font-family: "Apple SD Gothic Neo", "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
-  color: #172435;
-  background: #f6f8fc;
+  color: var(--ink);
+  background: var(--canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --canvas: #f6f8fc;
+  --canvas: #f7f7f6;
   --surface: #fff;
-  --ink: #172435;
-  --muted: #526176;
-  --accent: #166b61;
-  --error: #b33d46;
-  --line: color-mix(in srgb, var(--muted) 16%, var(--surface));
-  --soft: color-mix(in srgb, var(--muted) 7%, var(--surface));
+  --ink: #262626;
+  --muted: #6a6a67;
+  --accent: #262626;
+  --positive: #25724e;
+  --error: #b3373e;
+  --line: #e5e5e3;
+  --soft: #f0f0ee;
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 280px; }
@@ -21,5 +22,7 @@ button { color: inherit; }
 button:disabled { cursor: not-allowed; opacity: .45; }
 button, textarea, select { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+::selection { background: #deded9; color: var(--ink); }
+textarea { caret-color: var(--ink); }
 button svg { flex-shrink: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

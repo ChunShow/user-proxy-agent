@@ -29,7 +29,7 @@ export default function Composer({ value, onChange, onSubmit, inputRef, targetLa
       </div>}
       <div className="composer-row">
         <label className="sr-only" htmlFor="message-input">메시지</label>
-        <textarea id="message-input" ref={inputRef} value={value} rows={1} placeholder="비서에게 맡기고 싶은 일을 적어 주세요"
+        <textarea id="message-input" ref={inputRef} value={value} rows={1} placeholder="메시지를 입력하세요"
           onChange={event => onChange(event.target.value)}
           onCompositionStart={() => { composing.current = true }}
           onCompositionEnd={() => { composing.current = false }}

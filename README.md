@@ -1,4 +1,4 @@
-# Agent Service
+# user proxy agent
 
 사용자가 채팅으로 일을 맡기면 실제 앱과 전화로 처리하고, 진행 중인 통화를 읽거나
 들으며 추가 지시·종료로 개입할 수 있는 개인 비서 서비스.
@@ -49,7 +49,11 @@ Shift+Enter는 줄바꿈이며 한글 조합 중 Enter로는 추가하지 않는
 메인/예시 화면을 오갈 때 초안은 유지하고, 다른 통화 상태 예시를 선택하면 예시에 추가한 메시지는 초기화한다.
 ‘추가 지시’는 입력창의 대상을 지정한다. 메시지 추가 또는 대상 해제로 일반 대화로 돌아온다.
 
-검토한 화면: [데스크톱](docs/verification/step-02-desktop.png), [모바일](docs/verification/step-02-mobile.png).
+검토한 화면: [데스크톱 대화](docs/verification/step-02-refined-desktop-empty.png),
+[데스크톱 통화](docs/verification/step-02-refined-desktop-call.png),
+[모바일 대화](docs/verification/step-02-refined-mobile-empty.png),
+[모바일 통화](docs/verification/step-02-refined-mobile-call.png).
+표시 이름은 `user proxy agent`이며, 내부 디렉터리·패키지·health API 식별자는 `agent-service`를 유지한다.
 
 Ctrl-C로 두 서버를 함께 종료한다. 하나가 종료되면 나머지도 정리한다.
 포트가 이미 사용 중이면 이유를 출력하고 종료하며 기존 프로세스는 건드리지 않는다.
@@ -112,6 +116,8 @@ health 응답은 E2E에서 제어하고, 실제 서버 오류·복구는 별도 
   웹·백엔드 기본 구조의 구현 범위, 파일, 검증 방법.
 - [2단계 세부 계획](docs/superpowers/plans/2026-09-25-step-02-chat-design.md):
   Muse·Grok Bot 레퍼런스, 채팅·통화 카드 구현 및 검증 기록.
+- [2단계 디자인 수정](docs/superpowers/plans/2026-09-25-step-02-design-refinement.md):
+  user proxy agent 이름, 장식을 줄인 메신저 화면, Impeccable 스킬 적용 기록.
 
 ## 기존 작업과의 관계
 

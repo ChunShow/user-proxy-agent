@@ -25,6 +25,9 @@
 
 [2단계: 채팅 화면 디자인](superpowers/plans/2026-09-25-step-02-chat-design.md)
 
+[2단계 디자인 수정](superpowers/plans/2026-09-25-step-02-design-refinement.md):
+사용자 요청에 따라 `user proxy agent` 이름과 장식을 줄인 메신저 디자인을 반영했다.
+
 메신저형 채팅과 통화 카드 예시를 구현했다. 기존 11개 테스트와 신규 브라우저 14개,
 정적 검사·빌드·실제 서버 연결 오류/복구·4가지 화면 크기 검증을 완료했다.
 1단계 결과는 [완료 기록](superpowers/plans/2026-09-25-step-01-foundation.md)과 루트 README에 있다.

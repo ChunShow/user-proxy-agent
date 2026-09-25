@@ -15,7 +15,6 @@ export default function CallCard({ call, onAction }: { call: CallViewModel; onAc
   const active = call.callStatus === 'connected'
   const canEnd = active || call.callStatus === 'dialing'
   return <article className={`call-card call-${call.callStatus}`} aria-label={`${call.subject} 통화`}>
-    <div className="call-topline"><span className="call-kind"><Icon name="phone" />전화로 확인</span><span className="sample-label">화면 예시</span></div>
     <div className="call-purpose"><h2>{call.purpose}</h2><span className={`task-status task-${call.taskStatus}`} role="status">{taskLabels[call.taskStatus]}</span></div>
     <div className="call-line"><span>{call.subject}</span><span className="call-status" role="status"><i aria-hidden="true" />{callLabels[call.callStatus]}</span></div>
     <p className="call-summary">{call.summary}</p>

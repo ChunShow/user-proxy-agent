@@ -37,22 +37,20 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
   </nav>
   return <div className={`app-shell ${collapsed ? 'nav-collapsed' : ''}`}>
     <aside className="sidebar">
-      <div className="sidebar-brand"><span className="agent-mark" aria-hidden="true">a<span>·</span></span><span className="brand-name">agent service</span></div>
-      {navigation}
-      <div className="sidebar-bottom"><p>일을 맡기고,<br />대화는 이어가세요.</p>
+      <div className="sidebar-heading"><span>대화</span>
         <button className="nav-collapse" aria-label={collapsed ? '탐색 영역 펼치기' : '탐색 영역 접기'} onClick={() => setCollapsed(!collapsed)}><Icon name="menu" /><span>{collapsed ? '펼치기' : '접기'}</span></button>
       </div>
+      {navigation}
     </aside>
     <dialog ref={dialog} className="mobile-menu" aria-label="탐색 메뉴" onClose={() => { setMenuOpen(false); menuButton.current?.focus() }}>
-      <div className="menu-heading"><strong>agent service</strong><button aria-label="메뉴 닫기" onClick={() => dialog.current?.close()}><Icon name="close" /></button></div>
+      <div className="menu-heading"><strong>user proxy agent</strong><button aria-label="메뉴 닫기" onClick={() => dialog.current?.close()}><Icon name="close" /></button></div>
       {navigation}
     </dialog>
     <main className="chat-main">
       <header className="chat-header">
         <div className="assistant-heading">
           <button ref={menuButton} className="mobile-menu-button" aria-label="메뉴 열기" aria-expanded={menuOpen} onClick={() => { setMenuOpen(true); dialog.current?.showModal() }}><Icon name="menu" /></button>
-          <div className="assistant-avatar" aria-hidden="true"><span /><span /></div>
-          <div><h1>내 비서</h1><p>{preview ? '통화 화면 예시' : '당신의 일을 함께하는 대화'}</p></div>
+          <h1>user proxy agent</h1>
         </div>
         <ConnectionStatus />
       </header>
@@ -60,8 +58,8 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
       <div className="conversation-scroll" ref={scroller}>
         <div className={`conversation ${messages.length === 0 && !preview ? 'is-empty' : ''}`}>
           {messages.length === 0 && !preview && <div className="empty-chat">
-            <span className="empty-kicker">내 비서와의 첫 대화</span><h2>어떤 일을 도와드릴까요?</h2>
-            <p>아직 비서가 연결되지 않았습니다.<br />메시지를 적어 화면을 먼저 살펴보세요.</p>
+            <h2>새 대화</h2>
+            <p>메시지를 입력해 화면을 살펴보세요.<br />아직 자동 응답은 제공되지 않습니다.</p>
           </div>}
           {children}
           <MessageList messages={messages} />
