@@ -22,6 +22,7 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
   const previous = useRef({ preview, count: messages.length })
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const isEmpty = messages.length === 0 && !preview
   useEffect(() => {
     if (previous.current.preview !== preview) scroller.current?.scrollTo(0, 0)
     else if (messages.length > previous.current.count) bottom.current?.scrollIntoView({ block: 'nearest' })
@@ -54,19 +55,20 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
         </div>
         <ConnectionStatus />
       </header>
-      {preview && <div className="preview-banner">예시 데이터 · 실제 전화가 연결되지 않습니다</div>}
-      <div className="conversation-scroll" ref={scroller}>
-        <div className={`conversation ${messages.length === 0 && !preview ? 'is-empty' : ''}`}>
-          {messages.length === 0 && !preview && <div className="empty-chat">
-            <h2>새 대화</h2>
-            <p>메시지를 입력해 화면을 살펴보세요.<br />아직 자동 응답은 제공되지 않습니다.</p>
-          </div>}
-          {children}
-          <MessageList messages={messages} />
-          <div ref={bottom} />
+      <div className={`chat-workspace ${isEmpty ? 'is-start' : ''}`}>
+        <div className="conversation-scroll" ref={scroller}>
+          <div className={`conversation ${isEmpty ? 'is-empty' : ''}`}>
+            {isEmpty && <div className="empty-chat">
+              <h2>어떤 일을 도와드릴까요?</h2>
+              <p>확인하거나 부탁할 일을 편하게 적어 주세요.</p>
+            </div>}
+            {children}
+            <MessageList messages={messages} />
+            <div ref={bottom} />
+          </div>
         </div>
+        {composer}
       </div>
-      {composer}
     </main>
   </div>
 }

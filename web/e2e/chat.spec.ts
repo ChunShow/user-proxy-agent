@@ -40,6 +40,29 @@ test('does not submit Korean text while IME composition is active', async ({ pag
   await expect(page.getByRole('listitem')).toHaveCount(1)
 })
 
+for (const [width, height] of [[1440, 900], [390, 844], [320, 420]]) {
+  test(`starting a conversation keeps input close and preserves focus at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    await page.goto('/')
+    const input = page.getByRole('textbox', { name: '메시지' })
+    await expect(input).toBeInViewport({ ratio: 1 })
+    const gap = await page.evaluate(() => {
+      const intro = document.querySelector('.empty-chat')!.getBoundingClientRect()
+      const composer = document.querySelector('.composer')!.getBoundingClientRect()
+      return composer.top - intro.bottom
+    })
+    expect(gap).toBeGreaterThanOrEqual(0)
+    expect(gap).toBeLessThanOrEqual(56)
+    await input.fill('병원 진료 시간을 확인해 줘')
+    await input.press('Enter')
+    await expect(input).toBeFocused()
+    await expect(input).toBeInViewport({ ratio: 1 })
+    await expect(page.getByText('병원 진료 시간을 확인해 줘', { exact: true })).toBeInViewport({ ratio: 1 })
+    const bottomGap = await input.evaluate(element => innerHeight - element.getBoundingClientRect().bottom)
+    expect(bottomGap).toBeLessThan(120)
+  })
+}
+
 test('health failure and retry do not discard a draft', async ({ page }) => {
   await page.route('**/api/health', route => route.fulfill({ status: 503, body: 'unavailable' }))
   await page.goto('/')

@@ -53,7 +53,8 @@ export default function App() {
     targetLabel={target ? call.subject : undefined} onClearTarget={() => { setTarget(false); input.current?.focus() }} onSubmit={submit} />}>
     {preview && <>
       <div className="preview-tools">
-        <label htmlFor="preview-state">통화 예시 상태</label>
+        <p className="preview-banner">예시 데이터 · 실제 전화가 연결되지 않습니다</p>
+        <label className="sr-only" htmlFor="preview-state">통화 예시 상태</label>
         <select id="preview-state" value={example} onChange={event => changeExample(event.target.value as PreviewId)}>
           {previewOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>

@@ -41,6 +41,6 @@ export default function Composer({ value, onChange, onSubmit, inputRef, targetLa
         <button className="send-button" type="submit" aria-label="메시지 추가" title="메시지 추가" disabled={!value.trim()}><Icon name="arrow" /></button>
       </div>
     </form>
-    <p className="composer-note">화면 미리보기 · 메시지는 저장되지 않습니다<span>Enter 추가 · Shift + Enter 줄바꿈</span></p>
+    <div className="composer-note"><p>화면 미리보기 · 자동 응답과 저장은 아직 지원하지 않습니다.</p><span>Shift + Enter로 줄바꿈</span></div>
   </div>
 }
