@@ -325,6 +325,7 @@ class CallManager:
                 metrics["input_transcription_enabled"] = bool(
                     report.get("input_transcription_enabled")
                 )
+                metrics["timings_ms"] = report.get("timings_ms", {})
                 await self.db(
                     self.store.update,
                     call_id,

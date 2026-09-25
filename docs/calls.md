@@ -1,3 +1,38 @@
+# 현재 기본 통화 경로: GPT-Live
+
+2026-09-26 사용자 요청으로 기본 통화를 `gpt-live-1`로 전환했다.
+기존 Azure 리소스 URL과 api-key를 재사용하고 `/openai/v1/live/sessions`로 접속한다.
+`CALL_AUDIO_MODE=live`, `CALL_LIVE_MODEL=gpt-live-1`, `CALL_LIVE_VOICE=marin`을 사용한다.
+기존 `CALL_REALTIME_*`의 URL·키 이름은 유지하며 자동으로 다른 제공자에게 보내지 않는다.
+
+ClawOps G.711 μ-law 8kHz 음성과 Live를 직접 연결하며 별도 STT/TTS를 쓰지 않는다.
+Live 자체 전사와 task 상태를 client delegation으로 DeepAgents에 전달한다.
+`ask_user`는 채팅 확인 질문을 만들고 답을 기다린다. 실제 캘린더 조회·변경은 아직 없다.
+질문 답변은 owner/call/question/revision으로 검증하며, 중복 전송은 동일 결과를 반환한다.
+종료·만료·새 위임 뒤 오래된 결과는 통화에 반영하지 않는다.
+
+화면의 전달 완료는 Live의 명령 접수 ACK이며 실제 발화·상대 청취의 증거가 아니다.
+모델의 마지막 최종 답변만 전달하고 대기 해제 및 발화 지시를 함께 보낸다.
+Live는 발화 완료 이벤트가 없어서 자동 종료 시 로컬 음성 활동·큐와 ClawOps 재생 ACK를
+조합한다. `audio_drained`는 시간 기반 판단이며 기존 `played`와 구분해 목표 달성 확정으로
+표시하지 않는다. 직접 종료는 모델 판단을 기다리지 않는다.
+
+실제 Live·DeepAgents의 합성 음성 시험과 UI/API 자동 검증을 마쳤다.
+기존 5단계의 실통화 검증을 Live 검증으로 간주하지 않는다. 실회선 ARS·음질·지연은 남아 있다.
+통화 전사·질문·답변은 Git 제외 로컬 DB에 저장되며, 일반 로그에 원문을 출력하지 않는다.
+첫 입력/출력/재생 시점과 위임·사용자 답변·반영 시점을 기록한다. 아직 모든 발화의 지연을
+정확히 대응시키거나 종단 음질을 계측하는 기능은 아니다.
+
+`check_live_calls.py --preflight`는 현재 설정의 모델 세션과 회선/제어 연결만 확인한다.
+Live 모드에서는 음성 생성·위임까지 시험하지 않으므로 `audio_generation_tested=false`다.
+`--run`은 실제 발신이므로 명시적으로 지정한 대상과 목적 안에서만 실행한다.
+
+[6단계 구현 기록](superpowers/plans/2026-09-26-step-06-live-delegation.md).
+
+---
+
+아래는 기존 Realtime 경로와 5단계 검증 기록이다.
+
 # 통화 연결
 
 5단계 구현 완료. 모사 검증과 승인받은 본인 휴대폰 실통화 2회를 구분해 검증했다.

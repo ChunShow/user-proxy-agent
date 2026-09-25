@@ -36,6 +36,11 @@ class LiveBridge:
         self.last_input_sound = self.last_output_sound = 0.0
         self.last_digit_context = None
         self.last_input_text = ""
+        self.started_at = time.monotonic()
+        self.timings = {}
+
+    def stamp(self, name):
+        self.timings.setdefault(name, round((time.monotonic() - self.started_at) * 1000))
 
     async def send(self, event):
         async with self.send_lock:
@@ -72,6 +77,7 @@ class LiveBridge:
             if ack and kind == ack[0] and not ack[1].done():
                 ack[1].set_result(None)
             if kind == "session.output_audio.delta":
+                self.stamp("output_audio_first_ms")
                 raw = audio_bytes(event.get("delta"), limit=240000)
                 self.buffer.extend(raw)
                 while len(self.buffer) >= 160:
@@ -92,6 +98,7 @@ class LiveBridge:
                 self.transcripts.append(part)
                 self.transcripts = self.transcripts[-300:]
                 if role == "caller":
+                    self.stamp("input_transcript_first_ms")
                     self.last_input_text = (self.last_input_text + text)[-1500:]
                 if self.coordinator:
                     await self.coordinator.db(
@@ -110,6 +117,7 @@ class LiveBridge:
             if kind == "start":
                 self.ready.set()
             elif kind == "media":
+                self.stamp("input_audio_first_ms")
                 raw = audio_bytes(event["media"]["payload"])
                 self.input_bytes += len(raw)
                 if has_sound(raw):
@@ -123,6 +131,7 @@ class LiveBridge:
             elif kind == "mark":
                 count = self.marks.pop(event.get("mark", {}).get("name"), None)
                 if count is not None:
+                    self.stamp("playback_ack_first_ms")
                     self.played_bytes = max(self.played_bytes, count)
 
     async def greet(self):
@@ -146,6 +155,7 @@ class LiveBridge:
                 await self.media.send(
                     {"event": "media", "media": {"payload": base64.b64encode(packet).decode()}}
                 )
+                self.stamp("audio_sent_first_ms")
                 self.sent_bytes += len(packet)
                 if has_sound(packet):
                     self.last_output_sound = time.monotonic()
@@ -247,6 +257,7 @@ class LiveBridge:
             "played_audio_ms": self.played_bytes // 8,
             "input_transcription_enabled": True,
             "end_call": self.ending,
+            "timings_ms": self.timings,
         }
 
     async def run(self, media):

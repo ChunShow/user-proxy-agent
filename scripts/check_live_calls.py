@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import httpx
 
 from agent_service.calls.connection import AgentConnection
+from agent_service.calls.live import LiveAudioSession
 from agent_service.calls.manager import open_gateway
 from agent_service.calls.preflight import probe_audio
 from agent_service.calls.realtime import AzureAudioSession
@@ -21,16 +22,28 @@ async def preflight():
     settings = CallSettings.load()
     async with open_gateway(settings) as gateway:
         await gateway.preflight()
-        async with AzureAudioSession(
-            settings.realtime_base_url, settings.realtime_api_key, settings.realtime_model
-        ) as audio:
-            size = await probe_audio(audio)
+        session = (
+            LiveAudioSession(
+                settings.realtime_base_url,
+                settings.realtime_api_key,
+                settings.live_model,
+                voice=settings.live_voice,
+            )
+            if settings.audio_mode == "live"
+            else AzureAudioSession(
+                settings.realtime_base_url, settings.realtime_api_key, settings.realtime_model
+            )
+        )
+        async with session as audio:
+            size = None if settings.audio_mode == "live" else await probe_audio(audio)
             async with AgentConnection(settings.carrier):
                 pass
     return {
         "carrier_access": True,
         "sender_owned_and_idle": True,
         "audio_bytes": size,
+        "audio_mode": settings.audio_mode,
+        "audio_generation_tested": settings.audio_mode != "live",
         "control_socket_connected": True,
         "phone_call_placed": False,
     }
@@ -64,7 +77,7 @@ async def run(to, request_id):
                 "request_id": rid,
                 "conversation_id": cid,
                 "content": f'{destination}로 전화해줘. 시작 멘트는 "이준수님이 요청하신 '
-                '통화 기능 테스트를 '
+                "통화 기능 테스트를 "
                 '진행하는 AI 도우미입니다." 목적은 지금 통화 테스트가 가능한지 물어보고 '
                 "답을 재확인한 뒤 통화를 마치는 거야.",
             },
