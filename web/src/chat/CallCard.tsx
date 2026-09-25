@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Icon from '../components/Icon'
 import type { CallAction, CallViewModel } from './types'
 
@@ -8,6 +8,10 @@ const taskLabels = { working: '확인 중', needs_input: '추가 확인 필요',
 export default function CallCard({ call, onAction }: { call: CallViewModel; onAction: (action: CallAction) => void }) {
   const [expanded, setExpanded] = useState(false)
   const transcriptId = useId()
+  const transcript = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (expanded) transcript.current?.scrollIntoView({ block: 'nearest' })
+  }, [expanded])
   const active = call.callStatus === 'connected'
   const canEnd = active || call.callStatus === 'dialing'
   return <article className={`call-card call-${call.callStatus}`} aria-label={`${call.subject} 통화`}>
@@ -24,12 +28,12 @@ export default function CallCard({ call, onAction }: { call: CallViewModel; onAc
     <button className="transcript-toggle" type="button" aria-expanded={expanded} aria-controls={transcriptId} onClick={() => setExpanded(!expanded)}>
       <span>통화 내역 {expanded ? '접기' : '보기'}</span><Icon name="chevron" />
     </button>
-    {expanded && <div className="transcript" id={transcriptId}>
+    <div className="transcript" id={transcriptId} ref={transcript} hidden={!expanded}>
       <p className="transcript-note">예시 대화 · 실제 통화 기록이 아닙니다</p>
       {call.transcript.length === 0 ? <p className="transcript-empty">아직 통화 내역이 없습니다.</p> : call.transcript.map(line => <div key={line.id} className={`transcript-line ${line.final ? '' : 'partial'}`}>
         <span className="transcript-speaker">{line.speaker === 'agent' ? '비서' : '상대'}<small>{line.final ? '확정 · 예시' : '발화 중 · 예시'}</small></span>
         <p>{line.text}</p>
       </div>)}
-    </div>}
+    </div>
   </article>
 }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ChatView from './chat/ChatView'
 import Composer from './chat/Composer'
 import CallCard from './chat/CallCard'
@@ -16,6 +16,12 @@ export default function App() {
   const [call, setCall] = useState(() => createPreview('connected'))
   const [target, setTarget] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
+  const callSurface = useRef<HTMLDivElement>(null)
+  const previousExample = useRef(example)
+  useEffect(() => {
+    if (previousExample.current !== example) callSurface.current?.scrollIntoView({ block: 'start' })
+    previousExample.current = example
+  }, [example])
 
   function changeExample(id: PreviewId) {
     setExample(id); setCall(createPreview(id)); setTarget(false); setExampleMessages([])
@@ -57,7 +63,7 @@ export default function App() {
         })}>종료 확인 (예시)</button>}
       </div>
       <MessageList messages={previewMessages} label="예시 대화" />
-      <CallCard key={example} call={call} onAction={handleCall} />
+      <div ref={callSurface}><CallCard key={example} call={call} onAction={handleCall} /></div>
     </>}
   </ChatView>
 }

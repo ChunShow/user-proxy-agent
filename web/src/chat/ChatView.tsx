@@ -18,9 +18,15 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
   const dialog = useRef<HTMLDialogElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
+  const previous = useRef({ preview, count: messages.length })
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }) }, [messages.length])
+  useEffect(() => {
+    if (previous.current.preview !== preview) scroller.current?.scrollTo(0, 0)
+    else if (messages.length > previous.current.count) bottom.current?.scrollIntoView({ block: 'nearest' })
+    previous.current = { preview, count: messages.length }
+  }, [messages.length, preview])
   function navigate(next: boolean) {
     onNavigate(next)
     dialog.current?.close()
@@ -51,7 +57,7 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
         <ConnectionStatus />
       </header>
       {preview && <div className="preview-banner">예시 데이터 · 실제 전화가 연결되지 않습니다</div>}
-      <div className="conversation-scroll">
+      <div className="conversation-scroll" ref={scroller}>
         <div className={`conversation ${messages.length === 0 && !preview ? 'is-empty' : ''}`}>
           {messages.length === 0 && !preview && <div className="empty-chat">
             <span className="empty-kicker">내 비서와의 첫 대화</span><h2>어떤 일을 도와드릴까요?</h2>

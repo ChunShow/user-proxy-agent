@@ -137,3 +137,74 @@ test('preview navigation preserves drafts and six states have honest controls', 
   await expect(input).toHaveValue('')
   await expect(state).toHaveValue('connected')
 })
+
+for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 568]]) {
+  test(`layout stays usable at ${width}x${height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height })
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    const apiRequests: string[] = []
+    page.on('request', request => {
+      if (['fetch', 'xhr'].includes(request.resourceType())) apiRequests.push(new URL(request.url()).pathname)
+    })
+    await page.goto('/')
+    await page.screenshot({ path: testInfo.outputPath('empty.png') })
+    const input = page.getByRole('textbox', { name: '메시지' })
+    await input.fill('긴 한국어 문장입니다. '.repeat(20) + 'https://example.test/' + 'longsegment'.repeat(50))
+    await input.press('Enter')
+    await expect(page.getByRole('listitem')).toHaveCount(1)
+    const geometry = await page.evaluate(() => {
+      const message = document.querySelector('.message-bubble')!.getBoundingClientRect()
+      const composer = document.querySelector('.composer')!.getBoundingClientRect()
+      return { overflow: document.documentElement.scrollWidth > innerWidth, bottom: message.bottom, composerTop: composer.top }
+    })
+    expect(geometry.overflow).toBe(false)
+    expect(geometry.bottom).toBeLessThanOrEqual(geometry.composerTop)
+    await page.screenshot({ path: testInfo.outputPath('long-message.png') })
+    await page.goto('/?preview=call')
+    await page.getByRole('button', { name: '통화 내역 보기' }).click()
+    await page.screenshot({ path: testInfo.outputPath('call.png') })
+    await page.getByRole('combobox', { name: '통화 예시 상태' }).selectOption('failed')
+    await page.screenshot({ path: testInfo.outputPath('failed.png') })
+    const undersized = await page.locator('button, select').evaluateAll(elements => elements.filter(element => {
+      const bounds = element.getBoundingClientRect()
+      return bounds.width > 0 && bounds.height > 0 && (bounds.width < 44 || bounds.height < 44)
+    }).map(element => element.getAttribute('aria-label') || element.textContent))
+    expect(undersized).toEqual([])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+    expect(errors).toEqual([])
+    expect(apiRequests.length).toBeGreaterThan(0)
+    expect(apiRequests.every(path => path === '/api/health')).toBe(true)
+  })
+}
+
+test('switching the preview or ending a call clears stale steering targets', async ({ page }) => {
+  await page.goto('/?preview=call')
+  await page.getByRole('button', { name: '추가 지시' }).click()
+  await page.getByRole('textbox', { name: '메시지' }).fill('작성 중인 지시')
+  await page.getByRole('combobox', { name: '통화 예시 상태' }).selectOption('failed')
+  await expect(page.getByRole('button', { name: '지시 대상 해제' })).not.toBeVisible()
+  await expect(page.getByRole('textbox', { name: '메시지' })).toHaveValue('작성 중인 지시')
+  await page.getByRole('combobox', { name: '통화 예시 상태' }).selectOption('connected')
+  await page.getByRole('button', { name: '추가 지시' }).click()
+  await page.getByRole('button', { name: '통화 종료', exact: true }).click()
+  await expect(page.getByRole('button', { name: '지시 대상 해제' })).not.toBeVisible()
+})
+
+test('mobile preview opens at the top and expanding reveals the transcript', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/?preview=call')
+  await expect(page.getByRole('combobox', { name: '통화 예시 상태' })).toBeInViewport({ ratio: 1 })
+  await page.getByRole('button', { name: '통화 내역 보기' }).click()
+  await expect(page.getByText('안녕하세요. 진료 시간과 접수 마감 시간을 확인하고 싶습니다.', { exact: true })).toBeInViewport({ ratio: 1 })
+})
+
+test('changing a mobile example reveals its new purpose and status', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.goto('/?preview=call')
+  await page.getByRole('button', { name: '통화 내역 보기' }).click()
+  await page.getByRole('combobox', { name: '통화 예시 상태' }).selectOption('failed')
+  const card = page.getByRole('article', { name: '예시 병원 통화' })
+  await expect(card.getByRole('heading')).toBeInViewport({ ratio: 1 })
+  await expect(card.getByText('연결 실패', { exact: true })).toBeInViewport({ ratio: 1 })
+})
