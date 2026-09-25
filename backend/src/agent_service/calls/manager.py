@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from agent_service.calls.bridge import NativeAudioBridge
 from agent_service.calls.carrier import ClawOpsControl
 from agent_service.calls.connection import AgentConnection
+from agent_service.calls.preflight import check_local_sender
 from agent_service.calls.realtime import AzureAudioSession
 from agent_service.calls.settings import CallSettings, normalize_number
 from agent_service.calls.store import TERMINAL
@@ -24,6 +25,10 @@ class Gateway(ClawOpsControl):
     def __init__(self, settings, client):
         super().__init__(settings.carrier, client)
         self.config = settings
+
+    async def preflight(self):
+        await check_local_sender()
+        return await super().preflight()
 
     def audio(self, spec):
         return AzureAudioSession(
