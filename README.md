@@ -83,6 +83,8 @@ ESLint, 프로덕션 빌드를 실행한다. 수명 테스트는 임시 로컬 �
 - [전체 로드맵](docs/roadmap.md): 12단계 순서와 단계별 완료 기준.
 - [1단계 세부 계획](docs/superpowers/plans/2026-09-25-step-01-foundation.md):
   웹·백엔드 기본 구조의 구현 범위, 파일, 검증 방법.
+- [2단계 세부 계획](docs/superpowers/plans/2026-09-25-step-02-chat-design.md):
+  Muse·Grok Bot 레퍼런스와 채팅·통화 카드 디자인 제안. 사용자 컨펌 대기 중.
 
 ## 기존 작업과의 관계
 
