@@ -2,10 +2,10 @@
 
 ## 상태와 승인 기록
 
-- 상태: `proposed` — 구현 전 세부 계획 검토 대기.
+- 상태: `in_progress` — 기존 엔드포인트·키 재사용 조건으로 구현 중.
 - 요청: 2026-09-26 사용자 “live-1모델로 연결을 변경해서 진행해줘. 이것도 같이.”
   통화 모델의 DeepAgents 위임, 일정 확인, 메인 채팅 질문과 답변의 통화 반영을 지정했다.
-- 위 요청은 목표와 설계 방향의 근거다. 이 문서 작성 후의 세부 계획 승인은 아직 받지 않았다.
+- 위 요청은 목표와 설계 방향의 근거다. 계획 제시 후 사용자는 “엔드포인트랑 키 그대로 사용하고 아마 모델만 바꾸면 될거야”라고 구현 조건을 지정했다. 기존 변경 요청과 이 후속 지시에 따라 접속 재사용을 검증하고 구현을 진행한다.
 - 일정 확인 방식: 계획 준비 중 사용자 “우선 채팅으로 일정 확인”을 선택했다.
   이번에는 외부 캘린더 OAuth/조회 없이 사용자에게 질문하고 답변을 받는다.
 - 순차 직접 실행하고 검증된 작은 단위마다 로컬 Git에 기록한다.
@@ -56,8 +56,9 @@ DeepAgents는 동일한 모델 설정과 공통 도구 구성을 재사용하되
 ### A. Live 연결과 음성
 
 - `calls/live.py` 및 `calls/live_bridge.py`를 추가하고 manager의 음성 구현 선택을 분리한다.
-- `CALL_LIVE_BASE_URL`, `CALL_LIVE_API_KEY`, `CALL_LIVE_MODEL=gpt-live-1`,
-  `CALL_LIVE_VOICE`를 서버 전용 설정으로 도입한다. 기존 `MODEL_*`는 유지한다.
+- 기존 `CALL_REALTIME_BASE_URL`과 `CALL_REALTIME_API_KEY`를 그대로 재사용한다.
+  `CALL_AUDIO_MODE=live`, `CALL_LIVE_MODEL=gpt-live-1`, `CALL_LIVE_VOICE=marin`을 추가한다.
+  `MODEL_*`와 과거 Realtime 모델 설정은 유지한다.
 - 공식 연결은 `wss://api.openai.com/v1/live/sessions`, Bearer 인증,
   `session.start` → `session.started`이며 `delegation.type=client`를 사용한다.
   다른 공급자 엔드포인트는 해당 공급자의 Live 계약과 접근 권한 확인 후에만 허용한다.
@@ -148,7 +149,7 @@ DeepAgents는 동일한 모델 설정과 공통 도구 구성을 재사용하되
 완전한 통화 전사 UI·브라우저 청취·임의 추가 지시·실제 앱 OAuth는 각각 남은 후속 범위다.
 통화 1개 제한, 기존 소유권, 180초 상한, 중복 발신 방지는 유지한다.
 Live 키는 로컬 `.env`에 등록하고 Git/화면/일반 로그에 노출하지 않는다.
-공식 OpenAI Live 접근 또는 계약이 확인된 Live 호환 엔드포인트가 필요하다.
+기존 Azure 리소스의 `/openai/v1/live/sessions`에서 같은 api-key로 `gpt-live-1`의 `session.started`와 `session.closed`를 실제 확인했다. 기존 host/key를 재사용한다.
 
 ## 공식 근거 (2026-09-26 확인)
 

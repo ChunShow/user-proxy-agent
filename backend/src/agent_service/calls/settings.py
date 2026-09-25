@@ -32,6 +32,9 @@ class CallSettings:
     realtime_model: str
     allowed_numbers: tuple[str, ...] = field(repr=False)
     max_seconds: int = 180
+    audio_mode: str = "realtime"
+    live_model: str = "gpt-live-1"
+    live_voice: str = "marin"
 
     @classmethod
     def load(cls, path=None, *, environ=None):
@@ -60,6 +63,11 @@ class CallSettings:
             seconds = int(values.get("CALL_MAX_SECONDS") or "180")
             if not key or not 1 <= seconds <= 180:
                 raise ValueError
-            return cls(carrier, base, key, model, allowed, seconds)
+            mode = values.get("CALL_AUDIO_MODE", "realtime")
+            live_model = values.get("CALL_LIVE_MODEL", "gpt-live-1")
+            voice = values.get("CALL_LIVE_VOICE", "marin")
+            if mode not in {"realtime", "live"} or live_model != "gpt-live-1" or voice != "marin":
+                raise ValueError
+            return cls(carrier, base, key, model, allowed, seconds, mode, live_model, voice)
         except (OSError, ValueError, TypeError, AttributeError):
             raise ProviderFailure("calls_not_configured") from None

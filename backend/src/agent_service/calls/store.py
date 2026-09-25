@@ -61,9 +61,10 @@ def migrate(db):
             created_at TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT,
             version INTEGER NOT NULL
         );
-        DELETE FROM schema_version WHERE version < 2;
-        INSERT OR IGNORE INTO schema_version VALUES(2);
     """)
+    from agent_service.calls.live_store import migrate as migrate_live
+
+    migrate_live(db)
 
 
 def view(row):
@@ -94,6 +95,15 @@ class CallStore:
     def __init__(self, conversations):
         self.db = conversations
 
+    def _view(self, db, row):
+        from agent_service.calls.live_store import question_view
+
+        questions = db.execute(
+            "SELECT * FROM call_confirmations WHERE call_id=? ORDER BY created_at LIMIT 30",
+            (row["id"],),
+        ).fetchall()
+        return view(row) | {"confirmations": [question_view(q) for q in questions]}
+
     def _get(self, db, call_id, owner=None):
         sql, args = "SELECT * FROM phone_calls WHERE id=?", [call_id]
         if owner is not None:
@@ -110,7 +120,7 @@ class CallStore:
 
     def get(self, owner, call_id):
         with self.db.connection() as db:
-            return view(self._get(db, call_id, owner))
+            return self._view(db, self._get(db, call_id, owner))
 
     def register(self, owner, cid, uid, spec):
         payload = spec.model_dump_json()
@@ -214,7 +224,7 @@ class CallStore:
                 sql += " AND owner_id=?"
                 args.append(owner)
             rows = db.execute(sql, args).fetchall()
-            return [dict(r) if raw else view(r) for r in rows]
+            return [dict(r) if raw else self._view(db, r) for r in rows]
 
     def list(self, owner, cid, cursor=None):
         position = None
@@ -244,7 +254,7 @@ class CallStore:
                 if len(rows) > 50
                 else None
             )
-            return {"items": [view(r) for r in rows[:50]], "next_cursor": cursor}
+            return {"items": [self._view(db, r) for r in rows[:50]], "next_cursor": cursor}
 
     def user_texts(self, owner, cid, uid):
         with self.db.connection() as db:
