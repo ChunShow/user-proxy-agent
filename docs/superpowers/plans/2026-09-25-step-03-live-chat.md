@@ -15,9 +15,10 @@ POST 응답을 SSE로 전달하고, 브라우저는 사용자에게 보여 줄 �
 
 ## 상태와 승인 기록
 
-- 상태: `proposed` — 계획 검토·컨펌 대기.
+- 상태: `in_progress` — 사용자 승인 후 구현 중.
 - 요청: 2단계 UI/UX 수정 완료 뒤 “좋아 일단 그 다음 단계 이어서 진행할게.”
-- 위 요청에 따라 3단계의 조사와 계획을 작성했다. 이 문서의 구현 범위에 대한 컨펌은 아직 없다.
+- 승인: “모델 연결에 필요한 키 등의 정보는 이전에 쓰던 곳에서 복사해서 .env를 새로 구성해서 저장해줘. 진행해.”
+- 승인에 따라 기존 설정을 새 프로젝트 `.env`로 복사한다. 원본은 수정하지 않는다.
 - 이 문서 승인에는 아래 설정 재사용 및 합성 문장으로 한정한 실제 모델 검증을 포함한다.
 
 ## Global Constraints
@@ -62,7 +63,7 @@ Python 3.12는 두 패키지의 배포 메타데이터상 지원 범위 안에 �
 
 1. 기본 파일은 새 프로젝트 루트 `.env`이며 Git에서 제외한다.
 2. `AGENT_SERVICE_ENV_FILE`을 명시하면 해당 파일의 허용된 설정 키만 읽는다.
-   이번 로컬 검증에서는 기존 `../user_proxy_agent/.env`를 명시적으로 참조한다.
+   이번 로컬 검증에서는 사용자 지시에 따라 복사한 새 프로젝트 `.env`를 사용한다.
 3. 프로세스 환경변수가 파일보다 우선한다. 다른 `.env`를 자동 탐색·병합하지 않는다.
 4. 허용 키는 `MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL_NAME`, `MODEL_MAX_TOKENS`,
    `MODEL_TRUST_ENV`다. 기존 `PROXY_FAKE_MODEL` 등 평가용 설정은 읽지 않는다.
@@ -76,7 +77,7 @@ Python 3.12는 두 패키지의 배포 메타데이터상 지원 범위 안에 �
    기존 기업 gateway의 직접 연결이 필요하면 이 서비스의 HTTP 클라이언트만 0으로 설정한다.
    전역 `NO_PROXY`나 다른 프로젝트 환경은 수정하지 않는다.
 
-키 복사·브라우저 설정 화면·모델 선택 UI는 필요하지 않다. 모델 변경은 서버 환경 설정과 재시작으로 한다.
+키 복사는 이번 승인 범위에 포함한다. 브라우저 설정 화면·모델 선택 UI는 추가하지 않는다. 모델 변경은 서버 환경 설정과 재시작으로 한다.
 
 ## 요청·스트림 계약
 
@@ -153,10 +154,10 @@ SSE 이벤트의 `data`는 JSON이다. 공통 필드는 `request_id`와 서버 �
 `stream_reply(messages, settings) -> AsyncIterator[str]`.
 설정 검증은 실제 연결을 만들지 않으며, runtime은 텍스트 chunk만 반환하고 정제 전 예외를 서버 경계로 전달한다.
 
-- [ ] 설정 우선순위·누락·잘못된 URL·secret repr 차단의 실패 테스트 후 구현한다.
-- [ ] 공식 DeepAgents를 실제 생성한 테스트에서 허용 도구 목록과 사용자용 텍스트 필터링을 검증한다.
+- [x] 설정 우선순위·누락·잘못된 URL·secret repr 차단의 실패 테스트 후 구현한다.
+- [x] 공식 DeepAgents를 실제 생성한 테스트에서 허용 도구 목록과 사용자용 텍스트 필터링을 검증한다.
   모델은 네트워크 없는 테스트 모델로 주입한다. tool/reasoning chunk는 반환되지 않아야 한다.
-- [ ] `.env.example`에 빈 키와 등록·변경 방법을 적고 관련 테스트 통과 후 커밋한다.
+- [x] `.env.example`에 빈 키와 등록·변경 방법을 적고 관련 테스트 통과 후 커밋한다.
 
 검증: `cd backend && uv run pytest tests/test_settings.py tests/test_chat_runtime.py -q`.
 
@@ -167,11 +168,11 @@ SSE 이벤트의 `data`는 JSON이다. 공통 필드는 `request_id`와 서버 �
 
 인터페이스: 위 `/api/chat` 계약. runtime dependency를 교체할 수 있게 하여 오류·지연·중단을 재현한다.
 
-- [ ] 검증 실패가 모델을 호출하지 않는지, start/delta/done 순서와 오류 종료를 테스트한 후 구현한다.
-- [ ] UTF-8 한국어, newline/JSON escaping, heartbeat, 빈 응답, 출력 도중 오류와 전체 timeout을 검증한다.
-- [ ] 실제 임시 Uvicorn 서버에 연결한 HTTP 클라이언트를 중단해 iterator가 닫히고 작업이 정리되는지
+- [x] 검증 실패가 모델을 호출하지 않는지, start/delta/done 순서와 오류 종료를 테스트한 후 구현한다.
+- [x] UTF-8 한국어, newline/JSON escaping, heartbeat, 빈 응답, 출력 도중 오류와 전체 timeout을 검증한다.
+- [x] 실제 임시 Uvicorn 서버에 연결한 HTTP 클라이언트를 중단해 iterator가 닫히고 작업이 정리되는지
   검증한다. 테스트 runtime 기준 disconnect 후 1초 이내 취소를 확인한다.
-- [ ] 기존 health/서버 수명 테스트를 함께 확인하고 커밋한다.
+- [x] 기존 health/서버 수명 테스트를 함께 확인하고 커밋한다.
 
 검증: `cd backend && uv run pytest tests/test_chat_api.py tests/test_chat_disconnect.py tests/test_health.py tests/test_dev.py -q`.
 
@@ -222,3 +223,12 @@ SSE 이벤트의 `data`는 JSON이다. 공통 필드는 `request_id`와 서버 �
 - [langchain-openai 배포 메타데이터](https://pypi.org/pypi/langchain-openai/1.6.6/json)
 - 로컬 참고: `../user_proxy_agent/user_proxy_agent/runtime/model_config.py`,
   `../user_proxy_agent/pyproject.toml`. 형제 프로젝트 파일은 변경하지 않는다.
+
+## 구현 중 검증 기록
+
+- 새 `.env`를 원본의 모델 설정만 복사해 생성했다. 권한 0600과 Git ignore를 확인했다. 값은 출력하지 않았다.
+- 설정·DeepAgents·SSE·disconnect·기존 backend 테스트 28개 통과, Ruff 통과.
+- deepagents 0.7.19에는 기본 파일 도구 `delete`가 있고 Todo middleware는 기본 포함이 아니었다.
+  `delete`까지 제외하고 공식 TodoListMiddleware를 명시해 모델에 `write_todos`만 전달됨을 검증했다.
+- ASGI 2.4+의 기본 StreamingResponse는 공급자가 조용할 때 즉시 disconnect를 듣지 않았다.
+  전송과 disconnect를 함께 감시하는 response를 구현했다. 실제 HTTP 테스트에서 1초 내 upstream 정리를 검증했다.

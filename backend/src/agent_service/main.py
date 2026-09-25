@@ -5,6 +5,8 @@ from typing import Literal
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from agent_service.chat.routes import router
+
 
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
@@ -12,7 +14,8 @@ class HealthResponse(BaseModel):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Agent Service", version="0.1.0")
+    app = FastAPI(title="user proxy agent", version="0.1.0")
+    app.include_router(router)
 
     @app.get("/api/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
