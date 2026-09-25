@@ -12,6 +12,10 @@ from starlette.concurrency import run_in_threadpool
 from agent_service.calls.bridge import NativeAudioBridge
 from agent_service.calls.carrier import ClawOpsControl
 from agent_service.calls.connection import AgentConnection
+from agent_service.calls.delegation import DelegationCoordinator
+from agent_service.calls.live import LiveAudioSession
+from agent_service.calls.live_bridge import LiveBridge
+from agent_service.calls.live_store import LiveStore
 from agent_service.calls.preflight import check_local_sender
 from agent_service.calls.realtime import AzureAudioSession
 from agent_service.calls.settings import CallSettings, normalize_number
@@ -31,6 +35,14 @@ class Gateway(ClawOpsControl):
         return await super().preflight()
 
     def audio(self, spec):
+        if self.config.audio_mode == "live":
+            return LiveAudioSession(
+                self.config.realtime_base_url,
+                self.config.realtime_api_key,
+                self.config.live_model,
+                voice=self.config.live_voice,
+                task=json.dumps(spec.model_dump(exclude={"destination"}), ensure_ascii=False),
+            )
         return AzureAudioSession(
             self.config.realtime_base_url,
             self.config.realtime_api_key,
@@ -42,6 +54,10 @@ class Gateway(ClawOpsControl):
         return AgentConnection(self.settings)
 
     def bridge(self, model, spec):
+        if self.config.audio_mode == "live":
+            return LiveBridge(
+                model, listen_first=spec.listen_first, opening_message=spec.opening_message
+            )
         return NativeAudioBridge(
             model, listen_first=spec.listen_first, opening_message=spec.opening_message
         )
@@ -93,20 +109,24 @@ class CallManager:
         self.tasks, self.signals, self.locks = {}, {}, {}
         self.submissions = set()
         self.reports = {}
+        self.recoveries = set()
         self.closing = False
 
     async def db(self, method, *args, **kwargs):
         return await run_in_threadpool(method, *args, **kwargs)
 
-    def _spawn(self, call_id, coroutine):
+    def _spawn(self, call_id, coroutine, *, recovery=False):
         if call_id in self.tasks:
             coroutine.close()
             return
         task = asyncio.create_task(coroutine, name="managed-phone-call")
         self.tasks[call_id] = task
+        if recovery:
+            self.recoveries.add(call_id)
 
         def finished(done):
             self.tasks.pop(call_id, None)
+            self.recoveries.discard(call_id)
             # A DB failure leaves the durable active slot for restart recovery.
             # Consume exceptions here without logging provider/user payloads.
             if not done.cancelled():
@@ -155,10 +175,11 @@ class CallManager:
 
     async def _stop(self, owner, call_id):
         call = await self.db(self.store.request_stop, owner, call_id)
+        await self.db(LiveStore(self.store).cancel, call_id)
         if call["status"] not in TERMINAL:
             self.signals.setdefault(call_id, asyncio.Event()).set()
             if call_id not in self.tasks:
-                self._spawn(call_id, self._recover_one(call_id))
+                self._spawn(call_id, self._recover_one(call_id), recovery=True)
         return call
 
     async def _watch(self, gateway, call_id, external_id):
@@ -177,13 +198,15 @@ class CallManager:
         async with connection.media(external_id) as media:
             await self.db(self.store.update, call_id, status="connected")
             bridge = gateway.bridge(model, spec)
+            if isinstance(bridge, LiveBridge):
+                bridge.coordinator = DelegationCoordinator(self.store, call_id, bridge)
             try:
                 return await bridge.run(media)
             finally:
-                if isinstance(bridge, NativeAudioBridge):
+                if isinstance(bridge, (NativeAudioBridge, LiveBridge)):
                     self.reports[call_id] = bridge.report()
                 # Best effort clear before closing the media socket on direct stop/timeout.
-                if isinstance(bridge, NativeAudioBridge):
+                if isinstance(bridge, (NativeAudioBridge, LiveBridge)):
                     try:
                         await bridge._clear_output()
                     except Exception:
@@ -299,7 +322,9 @@ class CallManager:
                         "played_audio_ms",
                     )
                 }
-                metrics["input_transcription_enabled"] = False
+                metrics["input_transcription_enabled"] = bool(
+                    report.get("input_transcription_enabled")
+                )
                 await self.db(
                     self.store.update,
                     call_id,
@@ -314,7 +339,11 @@ class CallManager:
                 if verified and end.get("reason") == "goal_achieved"
                 else "incomplete"
             )
-            summary = end.get("summary", "")[:1000] if verified else ""
+            summary = (
+                end.get("summary", "")[:1000]
+                if verified or end.get("status") == "audio_drained"
+                else ""
+            )
             await self.db(
                 self.store.update,
                 call_id,
@@ -360,11 +389,14 @@ class CallManager:
         if call["status"] in TERMINAL:
             return call
         if call_id not in self.tasks:
-            self._spawn(call_id, self._recover_one(call_id))
-            await asyncio.shield(self.tasks[call_id])
+            self._spawn(call_id, self._recover_one(call_id), recovery=True)
+        task = self.tasks.get(call_id)
+        if task and call_id in self.recoveries:
+            await asyncio.shield(task)
         return await self.get(owner, call_id)
 
     async def _recover_one(self, call_id):
+        await self.db(LiveStore(self.store).cancel, call_id)
         row = await self.db(self.store.record, call_id)
         if row["status"] in TERMINAL:
             return
@@ -388,7 +420,7 @@ class CallManager:
 
     async def recover(self):
         for row in await self.db(self.store.active, raw=True):
-            self._spawn(row["id"], self._recover_one(row["id"]))
+            self._spawn(row["id"], self._recover_one(row["id"]), recovery=True)
 
     async def wait_idle(self):
         while self.submissions or self.tasks:

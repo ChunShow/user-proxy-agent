@@ -58,3 +58,31 @@ def test_call_endpoints_owner_origin_cache_and_no_dial(tmp_path):
         assert client.post(url + "/stop", json={}).status_code == 404
         assert client.get(f"/api/conversations/{cid}/calls").status_code == 404
         assert client.get("/api/calls/active").json()["items"] == []
+
+
+def test_confirmation_routes_validate_identity_revision_and_no_redial(tmp_path):
+    from agent_service.calls.live_store import LiveStore
+
+    app = create_app(database_path=tmp_path / "db.sqlite3")
+    with TestClient(app) as client:
+        _, call = seed(app, client)
+        calls = app.state.calls.store
+        calls.update(call["id"], status="connected")
+        live = LiveStore(calls)
+        live.begin(call["id"], "d1")
+        q = live.ask(call["id"], "d1", 1, "가능한가요?", ["가능", "불가"])
+        url = f"/api/calls/{call['id']}/confirmations/{q['id']}/answer"
+        body = {"answer": "가능", "expected_revision": 1, "request_id": str(uuid4())}
+        assert (
+            client.post(url, json=body, headers={"Origin": "https://evil.test"}).status_code == 403
+        )
+        assert client.post(url, json=body | {"expected_revision": 2}).status_code == 409
+        assert client.post(url, json=body).json()["status"] == "answered"
+        assert client.post(url, json=body).json()["status"] == "answered"
+        restored = client.get(f"/api/calls/{call['id']}").json()
+        assert restored["confirmations"][0]["answer"] == "가능"
+        assert calls.record(call["id"])["dial_attempted_at"] is None
+        client.cookies.clear()
+        client.post("/api/session", json={})
+        assert client.get(f"/api/calls/{call['id']}/activity").status_code == 404
+        assert client.post(url, json=body).status_code == 404

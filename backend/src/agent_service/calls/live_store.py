@@ -43,6 +43,13 @@ class LiveStore:
     def __init__(self, calls):
         self.calls, self.db = calls, calls.db
 
+    @staticmethod
+    def _event(db, call, kind, content):
+        db.execute(
+            "INSERT INTO call_activity(call_id,kind,content,created_at) VALUES(?,?,?,?)",
+            (call, kind, json.dumps(content, ensure_ascii=False), time.time()),
+        )
+
     def _valid(self, db, call, delegation, revision):
         row = self.calls._get(db, call)
         return (
@@ -79,12 +86,12 @@ class LiveStore:
                 "INSERT INTO call_delegations VALUES(?,?,?,'running',?)",
                 (call, delegation, revision, time.time()),
             )
+            self._event(db, call, "delegation_started", {"id": delegation, "revision": revision})
             return revision
 
     def _cancel(self, db, call):
         db.execute(
-            "UPDATE call_delegations SET status='canceled' WHERE "
-            "call_id=? AND status='running'",
+            "UPDATE call_delegations SET status='canceled' WHERE call_id=? AND status='running'",
             (call,),
         )
         db.execute(
@@ -179,10 +186,10 @@ class LiveStore:
             ):
                 raise StoreError("call_question_inactive")
             db.execute(
-                "UPDATE call_confirmations SET "
-                "answer=?,request_id=?,status='answered' WHERE id=?",
+                "UPDATE call_confirmations SET answer=?,request_id=?,status='answered' WHERE id=?",
                 (answer, request_id, qid),
             )
+            self._event(db, call, "user_answer_received", {"question_id": qid})
             return question_view(
                 db.execute("SELECT * FROM call_confirmations WHERE id=?", (qid,)).fetchone()
             )
@@ -198,6 +205,7 @@ class LiveStore:
                 "UPDATE call_delegations SET status=? WHERE call_id=? AND id=?",
                 (status, call, delegation),
             )
+            self._event(db, call, "delegation_" + status, {"id": delegation, "revision": revision})
             db.execute(
                 "UPDATE call_confirmations SET status=? WHERE call_id=? AND "
                 "delegation_id=? AND status='answered'",
@@ -212,10 +220,7 @@ class LiveStore:
 
     def event(self, call, kind, content):
         with self.db.connection() as db:
-            db.execute(
-                "INSERT INTO call_activity(call_id,kind,content,created_at) VALUES(?,?,?,?)",
-                (call, kind, json.dumps(content, ensure_ascii=False), time.time()),
-            )
+            self._event(db, call, kind, content)
 
     def activity(self, owner, call, after=0):
         with self.db.connection() as db:
@@ -226,8 +231,7 @@ class LiveStore:
                 (call, after),
             ).fetchall()
             questions = db.execute(
-                "SELECT * FROM call_confirmations WHERE call_id=? "
-                "ORDER BY created_at LIMIT 30",
+                "SELECT * FROM call_confirmations WHERE call_id=? ORDER BY created_at LIMIT 30",
                 (call,),
             ).fetchall()
             return {
