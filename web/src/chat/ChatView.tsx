@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import ConnectionStatus from '../components/ConnectionStatus'
 import Icon from '../components/Icon'
 import type { ChatMessage } from './types'
+import MessageList from './MessageList'
 import './chat.css'
 
 interface Props {
@@ -56,11 +57,8 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
             <span className="empty-kicker">내 비서와의 첫 대화</span><h2>어떤 일을 도와드릴까요?</h2>
             <p>아직 비서가 연결되지 않았습니다.<br />메시지를 적어 화면을 먼저 살펴보세요.</p>
           </div>}
-          <ul className="messages" aria-label="대화 내역">{messages.map(message => <li className={`message ${message.role}`} key={message.id}>
-            <span className="message-author">{message.role === 'user' ? '나' : message.role === 'assistant' ? '비서' : '안내'}</span>
-            <div className="message-bubble">{message.text}</div>
-          </li>)}</ul>
           {children}
+          <MessageList messages={messages} />
           <div ref={bottom} />
         </div>
       </div>
