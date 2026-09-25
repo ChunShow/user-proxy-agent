@@ -12,8 +12,9 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from agent_service.chat.routes import router
+from agent_service.conversations import router as conversations_router
 from agent_service.session import router as session_router
-from agent_service.storage import ConversationStore
+from agent_service.storage import ConversationStore, StoreError
 
 
 class HealthResponse(BaseModel):
@@ -34,6 +35,15 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="user proxy agent", version="0.1.0", lifespan=lifespan)
     app.state.store = store
     app.include_router(session_router)
+    app.include_router(conversations_router)
+
+    @app.exception_handler(StoreError)
+    async def store_error(request: Request, error):
+        return JSONResponse(
+            {"error": {"code": error.code, **error.details}},
+            status_code=error.status,
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error):

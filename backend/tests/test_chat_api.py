@@ -9,12 +9,19 @@ from openai import AuthenticationError, RateLimitError
 
 from agent_service.main import create_app
 
+CID = "a0000000-0000-4000-8000-000000000001"
 
-def payload(messages=None):
-    return {
-        "request_id": str(uuid4()),
-        "messages": messages or [{"role": "user", "content": "안녕하세요"}],
-    }
+
+@pytest.fixture
+def client(tmp_path):
+    with TestClient(create_app(database_path=tmp_path / "test.sqlite3")) as client:
+        client.post("/api/session", json={})
+        client.post("/api/conversations", json={"conversation_id": CID})
+        yield client
+
+
+def payload(content="안녕하세요"):
+    return {"request_id": str(uuid4()), "conversation_id": CID, "content": content}
 
 
 def events(response):
@@ -25,7 +32,7 @@ def events(response):
     ]
 
 
-def setup(monkeypatch, runner):
+def setup(monkeypatch, runner, client):
     from pydantic import SecretStr
 
     from agent_service.chat import routes
@@ -37,17 +44,17 @@ def setup(monkeypatch, runner):
         lambda: Settings("https://model.test/v1", SecretStr("hidden-key"), "test"),
     )
     monkeypatch.setattr(routes, "stream_reply", runner)
-    return TestClient(create_app())
+    return client
 
 
-def test_stream_contract_and_korean_newlines(monkeypatch):
+def test_stream_contract_and_korean_newlines(monkeypatch, client):
     async def reply(messages, settings):
         assert messages == [{"role": "user", "content": "안녕하세요"}]
         yield "안녕\n"
         yield '"하세요"'
 
     request = payload()
-    response = setup(monkeypatch, reply).post("/api/chat", json=request)
+    response = setup(monkeypatch, reply, client).post("/api/chat", json=request)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     data = events(response)
@@ -60,31 +67,30 @@ def test_stream_contract_and_korean_newlines(monkeypatch):
 @pytest.mark.parametrize(
     "body",
     [
-        {"request_id": "bad", "messages": [{"role": "user", "content": "x"}]},
-        payload([{"role": "system", "content": "x"}]),
-        payload([{"role": "user", "content": "   "}]),
-        payload([{"role": "assistant", "content": "x"}]),
-        payload([{"role": "user", "content": "x" * 12001}]),
-        payload([{"role": "user", "content": "x" * 10000}] * 7),
+        {**payload(), "request_id": "bad"},
+        {**payload(), "messages": [{"role": "system", "content": "x"}]},
+        payload("   "),
+        payload(None),
+        payload("x" * 12001),
+        {**payload(), "retry_message_id": str(uuid4())},
         {**payload(), "model": "other"},
     ],
 )
-def test_invalid_requests_never_call_model(body, monkeypatch):
+def test_invalid_requests_never_call_model(body, monkeypatch, client):
     calls = []
 
     async def forbidden(*args):
         calls.append(True)
         yield "must not be called"
 
-    response = setup(monkeypatch, forbidden).post("/api/chat", json=body)
+    response = setup(monkeypatch, forbidden, client).post("/api/chat", json=body)
     assert calls == []
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_request"
     assert "input" not in response.text
 
 
-def test_large_and_malformed_body_rejected():
-    client = TestClient(create_app())
+def test_large_and_malformed_body_rejected(client):
     assert (
         client.post(
             "/api/chat",
@@ -101,7 +107,7 @@ def test_large_and_malformed_body_rejected():
     )
 
 
-def test_missing_settings_are_not_reported_as_model_success(monkeypatch):
+def test_missing_settings_are_not_reported_as_model_success(monkeypatch, client):
     from agent_service.chat import routes
     from agent_service.settings import SettingsError
 
@@ -109,7 +115,7 @@ def test_missing_settings_are_not_reported_as_model_success(monkeypatch):
         raise SettingsError("do not expose this")
 
     monkeypatch.setattr(routes, "load_settings", missing)
-    response = TestClient(create_app()).post("/api/chat", json=payload())
+    response = client.post("/api/chat", json=payload())
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "not_configured"
     assert "do not expose" not in response.text
@@ -139,12 +145,12 @@ def test_missing_settings_are_not_reported_as_model_success(monkeypatch):
         ),
     ],
 )
-def test_partial_failures_are_terminal_and_sanitized(monkeypatch, error, code, retryable):
+def test_partial_failures_are_terminal_and_sanitized(monkeypatch, error, code, retryable, client):
     async def reply(*args):
         yield "일부 응답"
         raise error
 
-    response = setup(monkeypatch, reply).post("/api/chat", json=payload())
+    response = setup(monkeypatch, reply, client).post("/api/chat", json=payload())
     data = events(response)
     assert [name for name, _ in data] == ["start", "delta", "error"]
     assert data[-1][1]["code"] == code
@@ -152,15 +158,18 @@ def test_partial_failures_are_terminal_and_sanitized(monkeypatch, error, code, r
     assert "hidden-key" not in response.text
 
 
-def test_empty_response_is_error(monkeypatch):
+def test_empty_response_is_error(monkeypatch, client):
     async def reply(*args):
         if False:
             yield ""
 
-    assert events(setup(monkeypatch, reply).post("/api/chat", json=payload()))[-1][0] == "error"
+    assert (
+        events(setup(monkeypatch, reply, client).post("/api/chat", json=payload()))[-1][0]
+        == "error"
+    )
 
 
-def test_heartbeat_and_deadline_close_upstream(monkeypatch):
+def test_heartbeat_and_deadline_close_upstream(monkeypatch, client):
     from agent_service.chat import routes
 
     closed = []
@@ -174,7 +183,7 @@ def test_heartbeat_and_deadline_close_upstream(monkeypatch):
 
     monkeypatch.setattr(routes, "HEARTBEAT_SECONDS", 0.01)
     monkeypatch.setattr(routes, "CHAT_TIMEOUT_SECONDS", 0.05)
-    response = setup(monkeypatch, reply).post("/api/chat", json=payload())
+    response = setup(monkeypatch, reply, client).post("/api/chat", json=payload())
     assert ": keep-alive" in response.text
     assert events(response)[-1][1]["code"] == "timeout"
     assert closed == [True]

@@ -12,7 +12,7 @@ from agent_service.settings import Settings
 
 
 @pytest.mark.asyncio
-async def test_real_http_disconnect_closes_async_upstream_within_one_second(monkeypatch):
+async def test_real_http_disconnect_closes_async_upstream_within_one_second(monkeypatch, tmp_path):
     from agent_service.chat import routes
 
     closed = asyncio.Event()
@@ -34,7 +34,11 @@ async def test_real_http_disconnect_closes_async_upstream_within_one_second(monk
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     server = uvicorn.Server(
-        uvicorn.Config(create_app(), log_level="critical", timeout_graceful_shutdown=1)
+        uvicorn.Config(
+            create_app(database_path=tmp_path / "db.sqlite3"),
+            log_level="critical",
+            timeout_graceful_shutdown=1,
+        )
     )
     task = asyncio.create_task(server.serve(sockets=[sock]))
     try:
@@ -42,18 +46,32 @@ async def test_real_http_disconnect_closes_async_upstream_within_one_second(monk
             while not server.started:
                 await asyncio.sleep(0.01)
         async with httpx.AsyncClient(trust_env=False) as client:
+            base = f"http://127.0.0.1:{port}"
+            cid = str(uuid4())
+            await client.post(base + "/api/session", json={})
+            await client.post(base + "/api/conversations", json={"conversation_id": cid})
             async with client.stream(
                 "POST",
                 f"http://127.0.0.1:{port}/api/chat",
                 json={
                     "request_id": str(uuid4()),
-                    "messages": [{"role": "user", "content": "시작"}],
+                    "conversation_id": cid,
+                    "content": "시작",
                 },
             ) as response:
                 async for line in response.aiter_lines():
                     if line == "event: delta":
                         break
-        await asyncio.wait_for(closed.wait(), timeout=1)
+            await asyncio.wait_for(closed.wait(), timeout=1)
+            async with asyncio.timeout(1):
+                while True:
+                    saved = (await client.get(base + f"/api/conversations/{cid}")).json()[
+                        "messages"
+                    ][-1]
+                    if saved["status"] == "stopped":
+                        assert saved["text"] == "첫 응답"
+                        break
+                    await asyncio.sleep(0.01)
     finally:
         server.should_exit = True
         await asyncio.wait_for(task, timeout=3)
