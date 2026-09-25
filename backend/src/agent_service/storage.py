@@ -56,7 +56,7 @@ class ConversationStore:
         with self.connection() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);
-                INSERT OR IGNORE INTO schema_version VALUES (1);
+                INSERT INTO schema_version SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
                 CREATE TABLE IF NOT EXISTS conversations (
                     id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, title TEXT NOT NULL,
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -83,6 +83,9 @@ class ConversationStore:
                 );
             """)
 
+            from agent_service.calls.store import migrate
+
+            migrate(db)
             db.execute("UPDATE messages SET status='interrupted' WHERE status='streaming'")
             db.execute("UPDATE runs SET status='interrupted' WHERE status='streaming'")
 

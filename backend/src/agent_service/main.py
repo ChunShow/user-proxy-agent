@@ -1,4 +1,4 @@
-"""Local service entry point. Startup does not contact external providers."""
+"""Local service entry point. Startup only recovers unfinished calls for cleanup."""
 
 import os
 import sqlite3
@@ -12,6 +12,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from agent_service.calls.manager import CallManager
+from agent_service.calls.routes import router as calls_router
+from agent_service.calls.store import CallStore
 from agent_service.chat.routes import router
 from agent_service.conversations import router as conversations_router
 from agent_service.session import router as session_router
@@ -32,10 +35,16 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         await run_in_threadpool(store.initialize)
-        yield
+        await app.state.calls.recover()
+        try:
+            yield
+        finally:
+            await app.state.calls.shutdown()
 
     app = FastAPI(title="user proxy agent", version="0.1.0", lifespan=lifespan)
     app.state.store = store
+    app.state.calls = CallManager(CallStore(store))
+    app.include_router(calls_router)
     app.include_router(session_router)
     app.include_router(conversations_router)
 

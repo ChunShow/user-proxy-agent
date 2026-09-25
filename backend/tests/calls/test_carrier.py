@@ -128,3 +128,31 @@ async def test_media_wrong_call_or_codec_is_rejected():
                     },
                 }
             )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("busy", [True, False])
+async def test_preflight_checks_all_active_states_before_socket_takeover(busy):
+    from agent_service.calls.carrier import ClawOpsControl
+
+    seen = []
+
+    def handle(r):
+        seen.append(r)
+        if r.url.path.endswith("/numbers"):
+            return httpx.Response(200, json={"data": [{"number": "07011112222"}]})
+        assert r.method == "GET" and r.url.params["number"] == "07011112222"
+        return httpx.Response(200, json={"data": [call_body("in-progress")] if busy else []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as c:
+        carrier = ClawOpsControl(settings(), c)
+        if busy:
+            with pytest.raises(ProviderFailure, match="sender_busy"):
+                await carrier.preflight()
+        else:
+            await carrier.preflight()
+            assert {r.url.params.get("status") for r in seen[1:]} == {
+                "queued",
+                "ringing",
+                "in-progress",
+            }

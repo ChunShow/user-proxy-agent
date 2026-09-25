@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlencode
 
 import httpx
 
@@ -120,4 +121,19 @@ class ClawOpsControl:
                 raise ValueError
         except (httpx.HTTPError, KeyError, ValueError, TypeError):
             raise ProviderFailure("clawops_sender_not_verified") from None
+        # Documented read-only filters; block even an inbound call using this number.
+        for status in ("queued", "ringing", "in-progress"):
+            query = urlencode(
+                {"status": status, "number": self.settings.from_number, "pageSize": 1}
+            )
+            response = await self.request("GET", "calls?" + query)
+            try:
+                response.raise_for_status()
+                rows = response.json()["data"]
+                if not isinstance(rows, list):
+                    raise ValueError
+                if rows:
+                    raise ProviderFailure("clawops_sender_busy")
+            except (httpx.HTTPError, KeyError, ValueError, TypeError):
+                raise ProviderFailure("clawops_sender_state_unknown") from None
         return {"carrier_access": True, "sender_owned": True, "phone_call_placed": False}
