@@ -1,0 +1,153 @@
+import { expect, test, type Page } from '@playwright/test'
+import { mockConversations } from './fixtures'
+
+const cid = '00000000-0000-4000-8000-000000000501'
+const other = '00000000-0000-4000-8000-000000000502'
+async function phoneFixture(page: Page, status = 'connected') {
+  const mock = await mockConversations(page)
+  mock.conversations.set(cid, { id: cid, title: '통화 테스트', updated_at: new Date().toISOString(), messages: [
+    { id: 'user-call', role: 'user', text: '테스트 번호로 전화해 줘', status: 'completed', retryable: false },
+    { id: 'assistant-call', role: 'assistant', text: '전화를 연결하고 있습니다.', status: 'completed', retryable: false },
+  ] })
+  mock.conversations.set(other, { id: other, title: '다른 대화', updated_at: new Date().toISOString(), messages: [] })
+  let call = { id: '00000000-0000-4000-8000-000000000503', conversation_id: cid, source_user_message_id: 'user-call',
+    destination: '01000000001', subject: '통화 기능 테스트', purpose: '지금 통화가 가능한지 확인하기',
+    status, outcome: 'pending', reported_summary: '', error_code: null as string | null, stop_requested: false, version: 1 }
+  let stops = 0
+  await page.route('**/api/conversations/*/calls*', route => route.fulfill({ json: { items: route.request().url().includes(cid) ? [call] : [], next_cursor: null } }))
+  await page.route('**/api/calls/**', route => {
+    const url = route.request().url()
+    if (url.endsWith('/active')) return route.fulfill({ json: { items: ['ended', 'failed', 'canceled'].includes(call.status) ? [] : [call] } })
+    if (url.endsWith('/stop')) { stops++; call = { ...call, stop_requested: true, status: 'ending', version: call.version + 1 } }
+    return route.fulfill({ json: call })
+  })
+  return { mock, get: () => call, set: (patch: Partial<typeof call>) => { call = { ...call, ...patch, version: call.version + 1 } }, stops: () => stops }
+}
+
+test('real call card restores, allows chat, and ends only after confirmation', async ({ page }) => {
+  const fixture = await phoneFixture(page)
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await expect(card.getByText('통화 중', { exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '통화 종료', exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '통화 듣기' })).toHaveCount(0)
+  const input = page.getByRole('textbox', { name: '메시지' })
+  await input.fill('전화하는 동안 질문할게'); await input.press('Enter')
+  await expect(page.getByText('테스트 응답입니다.', { exact: true })).toBeVisible()
+  await page.reload(); await expect(card).toBeVisible()
+  await card.getByRole('button', { name: '통화 종료', exact: true }).dblclick()
+  await expect(card.getByText('종료 확인 중', { exact: true })).toBeVisible()
+  expect(fixture.stops()).toBe(1)
+  fixture.set({ status: 'ended', outcome: 'canceled' })
+  await expect(card.getByText('종료됨', { exact: true })).toBeVisible()
+  expect(fixture.mock.calls).toHaveLength(1)
+})
+
+test('other conversation retains a direct stop control and link to ongoing call', async ({ page }) => {
+  const fixture = await phoneFixture(page)
+  await page.goto(`/?conversation=${other}`)
+  const active = page.getByRole('region', { name: '진행 중인 통화' })
+  await expect(active.getByText('통화 기능 테스트')).toBeVisible()
+  await active.getByRole('button', { name: '대화로 이동' }).click()
+  await expect(page.getByRole('region', { name: '통화 기능 테스트 통화' })).toBeVisible()
+  await page.getByRole('button', { name: '다른 대화', exact: true }).click()
+  await active.getByRole('button', { name: '통화 종료', exact: true }).click()
+  await expect(active.getByText('종료 확인 중', { exact: true })).toBeVisible()
+  expect(fixture.stops()).toBe(1)
+})
+
+test('uncertain calls have no redial or false completion; errors can be refreshed', async ({ page }) => {
+  const fixture = await phoneFixture(page, 'unknown')
+  fixture.set({ error_code: 'call_delivery_unknown' })
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await expect(card.getByText('연결 확인 필요', { exact: true })).toBeVisible()
+  await expect(card.getByText(/ClawOps에서/)).toBeVisible()
+  await expect(card.getByRole('button', { name: '통화 종료', exact: true })).toHaveCount(0)
+  await card.getByRole('button', { name: '다시 확인' }).click()
+  await expect(card.getByText('연결 확인 필요', { exact: true })).toBeVisible()
+  expect(fixture.stops()).toBe(0)
+})
+
+test('model reported result restores on mobile and does not masquerade as transcript', async ({ page }) => {
+  const fixture = await phoneFixture(page, 'ended')
+  fixture.set({ outcome: 'model_reported_success', reported_summary: '통화 테스트가 가능하다고 재확인했습니다.' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await expect(card.getByText('통화 테스트가 가능하다고 재확인했습니다.')).toBeVisible()
+  await expect(card.getByText('통화 도우미가 정리한 결과')).toBeVisible()
+  await page.reload(); await expect(card).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('late polling response cannot undo stop, and mobile controls remain reachable', async ({ page }) => {
+  const fixture = await phoneFixture(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await expect(card).toBeVisible()
+  const old = fixture.get()
+  let release: () => void = () => {}
+  let waiting = false
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await page.route(`**/api/conversations/${cid}/calls`, async route => {
+    waiting = true; await gate
+    await route.fulfill({ json: { items: [old], next_cursor: null } })
+  })
+  await expect.poll(() => waiting).toBe(true)
+  const stop = card.getByRole('button', { name: '통화 종료', exact: true })
+  expect((await stop.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  await stop.focus(); await page.keyboard.press('Enter')
+  await expect(card.getByText('종료 확인 중', { exact: true })).toBeVisible()
+  const late = page.waitForResponse(r => r.url().endsWith(`${cid}/calls`))
+  release(); await late
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+  await expect(card.getByText('종료 확인 중', { exact: true })).toBeVisible()
+  expect(fixture.stops()).toBe(1)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})
+
+test('preparation, dialing and failure states render without claiming completion', async ({ page }) => {
+  const fixture = await phoneFixture(page, 'preparing')
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await expect(card.getByText('통화 준비 중', { exact: true })).toBeVisible()
+  fixture.set({ status: 'dialing' })
+  await expect(card.getByText('연결 중', { exact: true })).toBeVisible()
+  fixture.set({ status: 'failed', outcome: 'incomplete' })
+  await expect(card.getByText('연결하지 못함', { exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '통화 종료' })).toHaveCount(0)
+  await expect(card.getByText('종료됨', { exact: true })).toHaveCount(0)
+})
+
+test('phone surface desktop and mobile visual evidence', async ({ page }) => {
+  await phoneFixture(page)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`/?conversation=${cid}`)
+  await expect(page.getByRole('region', { name: '통화 기능 테스트 통화' })).toBeVisible()
+  await page.screenshot({ path: '../docs/verification/step-05-desktop.png' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: '../docs/verification/step-05-mobile.png' })
+})
+
+test('hidden page pauses polling and resumes when visible', async ({ page }) => {
+  await phoneFixture(page)
+  let reads = 0
+  page.on('request', request => { if (request.url().endsWith('/api/calls/active')) reads++ })
+  await page.goto(`/?conversation=${cid}`)
+  await expect(page.getByRole('region', { name: '통화 기능 테스트 통화' })).toBeVisible()
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  const before = reads
+  // Deliberately cross the 2-second polling boundary while the page is hidden.
+  await page.waitForTimeout(2300)
+  expect(reads).toBe(before)
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await expect.poll(() => reads).toBeGreaterThan(before)
+})

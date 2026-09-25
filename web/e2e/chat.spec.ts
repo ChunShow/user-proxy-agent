@@ -196,7 +196,7 @@ for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 568]]
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
     expect(errors).toEqual([])
     expect(apiRequests.length).toBeGreaterThan(0)
-    expect(apiRequests.every(path => ['/api/health', '/api/chat', '/api/session', '/api/conversations'].includes(path) || path.startsWith('/api/conversations/'))).toBe(true)
+    expect(apiRequests.every(path => ['/api/health', '/api/chat', '/api/session', '/api/conversations', '/api/calls/active'].includes(path) || path.startsWith('/api/conversations/'))).toBe(true)
   })
 }
 

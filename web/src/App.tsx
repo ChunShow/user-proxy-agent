@@ -7,9 +7,12 @@ import { createPreview, previewMessages, previewOptions } from './chat/preview'
 import type { PreviewId } from './chat/preview'
 import type { CallAction, ChatMessage } from './chat/types'
 import useChat from './chat/useChat'
+import useCalls from './chat/useCalls'
+import PhoneCallCard, { ActivePhoneCall } from './chat/PhoneCallCard'
 
 export default function App() {
   const chat = useChat()
+  const phones = useCalls(chat.preview ? null : chat.selectedId, chat.ready)
   const [exampleMessages, setExampleMessages] = useState<ChatMessage[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const preview = chat.preview
@@ -59,6 +62,9 @@ export default function App() {
     loading={!preview && chat.loading} loadError={!preview ? chat.loadError : ''} onReload={chat.refresh}
     hasMoreMessages={!preview && Boolean(chat.messageCursor)} onMoreMessages={chat.loadMore} pageError={chat.pageError}
     remoteBusy={!preview && chat.remoteBusy}
+    afterMessage={preview ? undefined : id => phones.calls.filter(c => c.source_user_message_id === id).map(c => <li className="phone-message" key={c.id}><PhoneCallCard call={c} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]} /></li>)}
+    activeCall={phones.otherActive.map(c => <ActivePhoneCall key={c.id} call={c} onOpen={() => chat.open(c.conversation_id)} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]} />)}
+    callError={phones.error && <div className="conversation-notice"><p role="status">{phones.error}</p><button type="button" onClick={phones.reload}>통화 상태 다시 불러오기</button></div>}
     onNavigate={next => {
     if (next) chat.stop()
     chat.navigate(next); setTarget(false)

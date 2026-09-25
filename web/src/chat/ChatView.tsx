@@ -30,11 +30,14 @@ interface Props {
   onMoreMessages: () => Promise<void>
   pageError: string
   remoteBusy: boolean
+  afterMessage?: (id: string) => ReactNode
+  activeCall?: ReactNode
+  callError?: ReactNode
 }
 
 export default function ChatView({ messages, preview, onNavigate, composer, children, onRetry,
   conversationId, conversations, onNewConversation, onSelectConversation, listError, hasMoreConversations,
-  onMoreConversations, onReloadList, loading, loadError, onReload, hasMoreMessages, onMoreMessages, pageError, remoteBusy }: Props) {
+  onMoreConversations, onReloadList, loading, loadError, onReload, hasMoreMessages, onMoreMessages, pageError, remoteBusy, afterMessage, activeCall, callError }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
@@ -91,6 +94,7 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
         </div>
         <ConnectionStatus />
       </header>
+      {activeCall}
       <div className={`chat-workspace ${isEmpty ? 'is-start' : ''}`}>
         <div className="conversation-scroll" ref={scroller} onScroll={() => {
           const scroll = scroller.current
@@ -115,8 +119,9 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
               requestAnimationFrame(() => { scroll.scrollTop = top + scroll.scrollHeight - height })
             }}>이전 메시지 더 보기</button>}
             {pageError && <p className="conversation-notice" role="status">{pageError}</p>}
+            {callError}
             {children}
-            <MessageList messages={messages} onRetry={onRetry} />
+            <MessageList messages={messages} onRetry={onRetry} afterMessage={afterMessage} />
             <div ref={bottom} />
           </div>
         </div>

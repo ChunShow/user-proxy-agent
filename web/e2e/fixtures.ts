@@ -4,6 +4,7 @@ type Message = { id: string; role: string; text: string; status: string; retryab
 export async function mockConversations(page: Page) {
   const conversations = new Map<string, { id: string; title: string; updated_at: string; messages: Message[] }>()
   const calls: Record<string, string>[] = []
+  await page.route('**/api/calls/active', route => route.fulfill({ json: { items: [] } }))
   await page.route('**/api/health', route => route.fulfill({ json: { status: 'ok', service: 'agent-service' } }))
   await page.route('**/api/session', route => route.fulfill({ status: 204 }))
   await page.route('**/api/conversations**', route => {
@@ -13,6 +14,7 @@ export async function mockConversations(page: Page) {
       if (!conversations.has(id)) conversations.set(id, { id, title: '새 대화', updated_at: new Date().toISOString(), messages: [] })
       return route.fulfill({ status: 201, json: conversations.get(id) })
     }
+    if (url.pathname.endsWith('/calls')) return route.fulfill({ json: { items: [], next_cursor: null } })
     const id = url.pathname.split('/')[3]
     if (id) {
       const conversation = conversations.get(id)

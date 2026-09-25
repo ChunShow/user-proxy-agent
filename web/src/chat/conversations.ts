@@ -8,7 +8,7 @@ export interface SavedConversation {
   messages: (ChatMessage & { error_code?: string })[]
   next_cursor: string | null
 }
-async function request<T>(path: string, body?: object, signal?: AbortSignal): Promise<T> {
+export async function request<T>(path: string, body?: object, signal?: AbortSignal): Promise<T> {
   try {
     const response = await fetch(path, {
       method: body ? 'POST' : 'GET', cache: 'no-store', credentials: 'same-origin',

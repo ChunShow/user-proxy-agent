@@ -1,9 +1,10 @@
+import { Fragment, type ReactNode } from 'react'
 import type { ChatMessage } from './types'
 
-export default function MessageList({ messages, label = '대화 내역', onRetry }: {
-  messages: ChatMessage[]; label?: string; onRetry?: () => void
+export default function MessageList({ messages, label = '대화 내역', onRetry, afterMessage }: {
+  messages: ChatMessage[]; label?: string; onRetry?: () => void; afterMessage?: (id: string) => ReactNode
 }) {
-  return <ul className="messages" aria-label={label}>{messages.map((message, index) => <li className={`message ${message.role}`} key={message.id}>
+  return <ul className="messages" aria-label={label}>{messages.map((message, index) => <Fragment key={message.id}><li className={`message ${message.role}`}>
     <span className="message-author">{message.role === 'user' ? '나' : message.role === 'assistant' ? 'user proxy agent' : '안내'}</span>
     {message.text && <div className="message-bubble">{message.text}</div>}
     {message.status && <div className="reply-feedback">
@@ -17,5 +18,5 @@ export default function MessageList({ messages, label = '대화 내역', onRetry
       {onRetry && index === messages.length - 1 && message.retryable &&
         <button type="button" onClick={onRetry}>다시 시도</button>}
     </div>}
-  </li>)}</ul>
+  </li>{afterMessage?.(message.id)}</Fragment>)}</ul>
 }
