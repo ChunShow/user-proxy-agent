@@ -19,7 +19,7 @@ def start(client, cid, **extra):
 def test_restore_context_retry_and_idempotency(tmp_path, monkeypatch):
     calls = []
 
-    async def reply(messages, settings):
+    async def reply(messages, settings, call_context=None):
         calls.append(messages)
         yield "합성 응답"
 
@@ -100,7 +100,7 @@ def test_partial_failure_retry_and_restart_interruption(tmp_path, monkeypatch):
 def test_history_window_and_message_pages(tmp_path, monkeypatch):
     calls = []
 
-    async def reply(messages, settings):
+    async def reply(messages, settings, call_context=None):
         calls.append(messages)
         yield "답"
 

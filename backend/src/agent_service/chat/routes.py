@@ -1,4 +1,4 @@
-"""One request owns one stream. Disconnects cancel and close all upstream work."""
+"""Disconnects close text generation; managed calls have an independent lifetime."""
 
 import asyncio
 import json
@@ -11,6 +11,7 @@ from openai import APITimeoutError, AuthenticationError, PermissionDeniedError, 
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
+from agent_service.calls.tools import CallContext
 from agent_service.chat.history import model_history
 from agent_service.chat.runtime import stream_reply
 from agent_service.chat.schemas import ChatRequest
@@ -62,7 +63,8 @@ async def durable_call(function, *args):
 
 
 class SavedReply:
-    def __init__(self, store, owner, identity, settings):
+    def __init__(self, store, owner, identity, settings, call_context=None):
+        self.call_context = call_context
         self.store, self.owner, self.identity, self.settings = store, owner, identity, settings
         self.text = ""
 
@@ -80,7 +82,9 @@ class SavedReply:
             data = json.dumps(identity | values, ensure_ascii=False)
             return f"event: {name}\ndata: {data}\n\n"
 
-        iterator = stream_reply(model_history(self.identity["history"]), self.settings)
+        iterator = stream_reply(
+            model_history(self.identity["history"]), self.settings, self.call_context
+        )
         pending = None
         saved_at = time.monotonic()
         try:
@@ -180,7 +184,15 @@ async def chat(request: Request):
         identity = await reservation
         await durable_call(store.save_run, owner, identity, "", "stopped")
         raise
-    reply = SavedReply(store, owner, identity, settings)
+    reply = SavedReply(
+        store,
+        owner,
+        identity,
+        settings,
+        CallContext(
+            request.app.state.calls, owner, identity["conversation_id"], identity["user_message_id"]
+        ),
+    )
     return ChatStreamingResponse(
         reply.events(),
         cleanup=reply.close,

@@ -113,9 +113,12 @@ class CallManager:
         if self.closing:
             raise StoreError("calls_unavailable", 503)
         # Own the complete reservation+schedule operation, including thread completion.
-        task = asyncio.create_task(
+        return await self._owned(
             self._register(owner, conversation_id, source_user_message_id, spec)
         )
+
+    async def _owned(self, coroutine):
+        task = asyncio.create_task(coroutine)
         self.submissions.add(task)
 
         def finished(done):
@@ -143,6 +146,9 @@ class CallManager:
         return await self.db(self.store.get, owner, call_id)
 
     async def stop(self, owner, call_id):
+        return await self._owned(self._stop(owner, call_id))
+
+    async def _stop(self, owner, call_id):
         call = await self.db(self.store.request_stop, owner, call_id)
         if call["status"] not in TERMINAL:
             self.signals.setdefault(call_id, asyncio.Event()).set()

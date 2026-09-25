@@ -48,7 +48,7 @@ def setup(monkeypatch, runner, client):
 
 
 def test_stream_contract_and_korean_newlines(monkeypatch, client):
-    async def reply(messages, settings):
+    async def reply(messages, settings, call_context=None):
         assert messages == [{"role": "user", "content": "안녕하세요"}]
         yield "안녕\n"
         yield '"하세요"'

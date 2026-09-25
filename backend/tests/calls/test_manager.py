@@ -272,13 +272,43 @@ async def test_goal_evidence_survives_unconfirmed_hangup_and_refresh(tmp_path):
 
 async def test_database_failure_after_dial_still_attempts_carrier_cleanup(tmp_path, monkeypatch):
     import sqlite3
-    m,g,db,s,o,c,u=manager(tmp_path)
-    original=s.update
-    def broken(call_id,**changes):
+
+    m, g, db, s, o, c, u = manager(tmp_path)
+    original = s.update
+
+    def broken(call_id, **changes):
         if g.dials:
-            raise sqlite3.OperationalError('disk unavailable')
-        return original(call_id,**changes)
-    monkeypatch.setattr(s,'update',broken)
-    await m.start(o,c,u,spec())
+            raise sqlite3.OperationalError("disk unavailable")
+        return original(call_id, **changes)
+
+    monkeypatch.setattr(s, "update", broken)
+    await m.start(o, c, u, spec())
     await m.wait_idle()
-    assert g.dials==1 and g.hangups>=1
+    assert g.dials == 1 and g.hangups >= 1
+
+
+async def test_disconnect_during_stop_persistence_still_stops_worker(tmp_path, monkeypatch):
+    import threading
+
+    m, g, db, s, o, c, u = manager(tmp_path)
+    a = await m.start(o, c, u, spec())
+    await until(lambda: s.get(o, a["id"])["status"] == "connected")
+    entered, release = threading.Event(), threading.Event()
+    original = s.request_stop
+
+    def delayed(*args):
+        entered.set()
+        release.wait(2)
+        return original(*args)
+
+    monkeypatch.setattr(s, "request_stop", delayed)
+    request = asyncio.create_task(m.stop(o, a["id"]))
+    await until(entered.is_set)
+    request.cancel()
+    release.set()
+    await asyncio.gather(request, return_exceptions=True)
+    try:
+        await until(lambda: g.hangups == 1)
+    finally:
+        await m.shutdown()
+    assert s.get(o, a["id"])["status"] == "ended"
