@@ -9,7 +9,7 @@ from uuid import uuid4
 import httpx
 
 
-def ask(client, base_url, messages, *, stop_after=None):
+def ask(client, base_url, conversation_id, content, *, stop_after=None):
     started = time.monotonic()
     text, chunks, first = "", 0, None
     with client.stream(
@@ -17,7 +17,8 @@ def ask(client, base_url, messages, *, stop_after=None):
         f"{base_url}/api/chat",
         json={
             "request_id": str(uuid4()),
-            "messages": messages,
+            "conversation_id": conversation_id,
+            "content": content,
         },
     ) as response:
         if response.status_code != 200:
@@ -58,45 +59,39 @@ def main():
     if not args.run:
         parser.error("Pass --run to make live model requests")
     with httpx.Client(trust_env=False, timeout=130) as client:
-        first = {
-            "role": "user",
-            "content": "테스트 식별 단어는 푸른솔482입니다. "
-            "이 단어를 기억했다고 한국어로 한 문장만 답하세요.",
-        }
-        answer, metrics = ask(client, args.base_url, [first])
+        client.post(f"{args.base_url}/api/session", json={}).raise_for_status()
+        cid = str(uuid4())
+        client.post(f"{args.base_url}/api/conversations",
+                    json={"conversation_id": cid}).raise_for_status()
+        answer, metrics = ask(client, args.base_url, cid,
+                             "테스트 식별 단어는 푸른솔482입니다. 기억했다고 한 문장만 답하세요.")
         assert re.search("[가-힣]", answer), "No Korean response"
         print("Korean response:", metrics, flush=True)
-        answer2, metrics = ask(
-            client,
-            args.base_url,
-            [
-                first,
-                {"role": "assistant", "content": answer},
-                {"role": "user", "content": "앞서 알려준 식별 단어만 답하세요."},
-            ],
-        )
-        assert "푸른솔482" in answer2, "Context was not retained"
-        print("Context retained:", metrics, flush=True)
-        _, metrics = ask(
-            client,
-            args.base_url,
-            [
-                {
-                    "role": "user",
-                    "content": ("1부터 100까지 각각 일상에서 할 수 있는 일을 "
-                                "한 문장씩 길게 써 주세요."),
-                }
-            ],
-            stop_after=3,
-        )
+        saved = client.get(f"{args.base_url}/api/conversations/{cid}")
+        saved.raise_for_status()
+        assert len(saved.json()["messages"]) == 2
+        # The next call contains only new input; the server restores previous context.
+        answer2, metrics = ask(client, args.base_url, cid, "앞서 알려준 식별 단어만 답하세요.")
+        assert "푸른솔482" in answer2, "Stored context was not retained"
+        print("Stored context retained:", metrics, flush=True)
+        _, metrics = ask(client, args.base_url, cid,
+                         "1부터 100까지 일상에서 할 수 있는 일을 한 문장씩 길게 써 주세요.",
+                         stop_after=3)
         print("Client stopped response:", metrics, flush=True)
-        recovery, metrics = ask(
-            client,
-            args.base_url,
-            [{"role": "user", "content": "새 요청입니다. 한국어로 짧게 인사해 주세요."}],
-        )
+        deadline = time.monotonic() + 5
+        while True:
+            saved = client.get(f"{args.base_url}/api/conversations/{cid}")
+            saved.raise_for_status()
+            if saved.json()["messages"][-1]["status"] == "stopped":
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Stopped response was not persisted")
+            time.sleep(0.1)
+        recovery, metrics = ask(client, args.base_url, cid,
+                                "새 요청입니다. 한국어로 짧게 인사해 주세요.")
         assert re.search("[가-힣]", recovery), "No response after stop"
         print("New request after stop:", metrics, flush=True)
+
 
 
 if __name__ == "__main__":

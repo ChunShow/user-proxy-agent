@@ -3,8 +3,8 @@
 사용자가 채팅으로 일을 맡기면 실제 앱과 전화로 처리하고, 진행 중인 통화를 읽거나
 들으며 추가 지시·종료로 개입할 수 있는 개인 비서 서비스.
 
-현재는 **3단계: DeepAgents 실제 채팅**까지 구현했다. 모델 응답을 실시간으로 표시하고,
-응답 중단·재시도와 같은 탭의 대화 문맥을 지원한다. 실제 전화·앱 연동은 후속 단계다.
+현재는 **4단계: 대화 저장·이어가기**까지 구현했다. 실제 모델의 스트리밍 응답과 중단·재시도,
+새 대화·이전 대화 목록, 새로고침·서버 재시작 후 문맥 복원을 지원한다. 실제 전화·앱 연동은 후속 단계다.
 서버 연결 상태·재시도는 health API를 사용하며, 모델 연결은 실제 메시지를 보내 확인한다.
 
 ## 설치
@@ -73,17 +73,34 @@ Shift+Enter는 줄바꿈이며 한글 조합 중 Enter로는 전송하지 않는
 듣기는 화면 상태만 바꾸며 실제 소리는 재생하지 않는다.
 
 메시지와 완료된 응답은 다음 모델 요청의 문맥으로 전달한다. 실패·중단된 부분 응답과 예시 대화는 제외한다.
-대화·초안·통화 예시는 현재 탭의 메모리에만 있으며 새로고침 시 초기화된다.
-서버·브라우저 저장소에는 영구 저장하지 않는다. 메인에서 통화 예시로 이동하면 진행 중 응답을 중단한다.
+대화와 응답 상태는 서버의 `data/agent-service.sqlite3`에 저장한다. 사이드바의 ‘새 대화’로
+새로 시작하고 이전 대화를 선택해 이어간다. URL의 대화 ID로 새로고침과 뒤로/앞으로 이동도 복원한다.
+이전 메시지는 50개씩 불러오며 ‘이전 메시지 더 보기’를 눌러도 읽던 위치를 유지한다.
+전송하지 않은 초안과 통화 예시 상태는 탭 메모리에만 있다. 초안은 대화별·예시별로 구분하며 새로고침하면 사라진다.
+대화 전환·예시 이동·새로고침·탭 닫기는 진행 중 응답을 중단한다. 복원만으로 모델 요청을 재실행하지 않는다.
+정상 중단은 받은 부분까지 저장하고, 강제 종료는 마지막 DB 저장분을 ‘연결이 끊겨 응답이 중단되었습니다’로 복원한다.
+다른 탭에서 응답 중인 대화는 새 전송을 막고 ‘다시 불러오기’로 상태를 확인한다.
 브라우저에서 중단하면 서버의 실행과 공급자 연결도 닫는다. 공급자 내부 처리·과금 취소까지 보장하지는 않는다.
 메인/예시 화면을 오갈 때 초안은 유지하고, 다른 통화 상태 예시를 선택하면 예시에 추가한 메시지는 초기화한다.
 ‘추가 지시’는 입력창의 대상을 지정한다. 메시지 추가 또는 대상 해제로 일반 대화로 돌아온다.
 
-검토한 실제 채팅: [데스크톱](docs/verification/step-03-desktop-chat.png),
-[모바일](docs/verification/step-03-mobile-chat.png), [응답 중단](docs/verification/step-03-mobile-stopped.png).
+검토한 실제 저장 대화: [데스크톱](docs/verification/step-04-desktop-chat.png),
+[모바일](docs/verification/step-04-mobile-chat.png), [대화 목록](docs/verification/step-04-mobile-list.png).
 통화 화면은 [데스크톱 예시](docs/verification/step-02-refined-desktop-call.png),
 [모바일 예시](docs/verification/step-02-refined-mobile-call.png)다.
 표시 이름은 `user proxy agent`이며, 내부 디렉터리·패키지·health API 식별자는 `agent-service`를 유지한다.
+
+## 저장 위치와 접근 범위
+
+현재는 **로그인 없이 브라우저별로 구분하는 로컬 서비스**다. HttpOnly 쿠키로 30일간 같은
+브라우저 프로필·호스트의 대화를 찾는다. 다른 브라우저/시크릿 창은 별도 공간이며, 서버가 모든 대화 접근의 소유권을 확인한다.
+쿠키 삭제·만료 후 기존 대화 복구와 기기 간 동기화는 아직 지원하지 않는다. localStorage에는 마지막 선택 ID만 저장한다.
+SQLite 파일·저널과 `.env`는 Git에서 제외한다. 세션 토큰은 해시만 DB에 저장하지만 대화 본문은 로컬 파일의 평문이다.
+DB 디렉터리 권한은 0700, 파일은 0600이다. 백엔드 단일 프로세스를 사용한다.
+`AGENT_SERVICE_DATABASE_PATH` 프로세스 환경변수로 별도 DB 경로를 지정할 수 있다. 자동 테스트는 임시 DB를 사용한다.
+DB를 복사해 보관할 때는 서버를 정상 종료한 뒤 `data/` 전체를 보관한다. DB만으로 브라우저 쿠키를 복원하지는 못한다.
+
+## 서버 종료와 포트 변경
 
 Ctrl-C로 두 서버를 함께 종료한다. 하나가 종료되면 나머지도 정리한다.
 포트가 이미 사용 중이면 이유를 출력하고 종료하며 기존 프로세스는 건드리지 않는다.
@@ -133,9 +150,9 @@ npm run test:e2e
 
 이미 설치된 Google Chrome을 사용하려면 브라우저 설치 대신
 `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e`로 실행한다. 이번 검증은 이 방식으로 진행했다.
-E2E 22개는 5193 포트에 독립 웹 서버를 띄운 뒤 정리하며 포트가 점유되어 있으면 실패한다.
-health와 chat 응답은 E2E에서 제어한다. 실제 모델과 브라우저 연결은 별도 smoke test로 확인했다.
-현재 자동 테스트는 backend 29개, 웹 API/스트림 16개, E2E 22개다.
+E2E 28개는 5193 포트에 독립 웹 서버를 띄운 뒤 정리하며 포트가 점유되어 있으면 실패한다.
+health·세션·대화 저장·chat 응답은 E2E에서 제어한다. 실제 모델과 브라우저 연결은 별도 smoke test로 확인했다.
+현재 자동 테스트는 backend 41개, 웹 API/스트림 17개, E2E 28개다.
 스크린샷과 실패 시 trace는 `web/test-results/`에 생성한다. 이 경로는 커밋에서 제외한다.
 
 실제 모델 검증은 실행 중인 서버에 대해 아래 명령을 명시적으로 실행한다.
@@ -145,10 +162,17 @@ health와 chat 응답은 E2E에서 제어한다. 실제 모델과 브라우저 �
 backend/.venv/bin/python scripts/check_live_chat.py --run
 ```
 
-`POST /api/chat`은 user/assistant 문맥을 받아 start/delta/done/error SSE를 반환한다.
-공급자 오류 원문은 전달하지 않는다. 전체 실행 한도는 120초, 자동 재시도는 없으며,
-요청 문맥은 최대 80개 메시지·전체 60,000자다. 전체 계약은 3단계 계획에 있다.
-현재는 로컬 단일 사용자 서비스이며 인증·영구 저장·공개 배포는 아직 구현하지 않았다.
+API 사용 시 먼저 `POST /api/session`에 `{}`를 보내 쿠키를 받고, 이후 같은 쿠키를 유지한다.
+`POST /api/conversations`에 클라이언트가 생성한 `conversation_id` UUID를 보내 대화를 만든다.
+`POST /api/chat`은 `{request_id, conversation_id, content}` 또는
+`{request_id, conversation_id, retry_message_id}`를 받고 start/delta/done/error SSE를 반환한다.
+같은 전송을 네트워크 재시도할 때 request_id를 유지한다. 이미 접수됐으면 409와 기존 ID를 반환하고 모델을 재실행하지 않는다.
+사용자의 명시적 ‘다시 시도’는 새 request_id와 마지막 응답의 retry_message_id를 사용한다.
+문맥은 서버가 저장 기록에서 선택한다. 최근 전체 턴 기준 최대 80개 메시지·60,000자이며,
+오래된 턴은 모델 입력에서 제외하지만 원문은 DB에 남긴다. 자동 요약과 DeepAgents 내부 실행 상태 복원은 하지 않는다.
+공급자 오류 원문은 전달하지 않는다. 전체 실행 한도는 120초다.
+전체 계약과 상태 전이는 [4단계 계획](docs/superpowers/plans/2026-09-25-step-04-conversation-storage.md)에 있다.
+계정 로그인·공개 배포·대화 검색/편집/삭제는 아직 구현하지 않았다.
 
 ## 문서 읽기
 
@@ -161,6 +185,8 @@ backend/.venv/bin/python scripts/check_live_chat.py --run
   Muse·Grok Bot 레퍼런스, 채팅·통화 카드 구현 및 검증 기록.
 - [3단계 실제 채팅](docs/superpowers/plans/2026-09-25-step-03-live-chat.md):
   모델 설정, SSE 계약, 중단·재시도와 실제 모델 검증 기록.
+- [4단계 대화 저장](docs/superpowers/plans/2026-09-25-step-04-conversation-storage.md):
+  SQLite·브라우저 세션·복원·중복 방지와 실제 모델 검증 기록.
 - [2단계 디자인 수정](docs/superpowers/plans/2026-09-25-step-02-design-refinement.md):
   user proxy agent 이름, 장식을 줄인 메신저 화면, Impeccable 스킬 적용 기록.
 
