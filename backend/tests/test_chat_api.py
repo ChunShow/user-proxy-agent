@@ -69,8 +69,15 @@ def test_stream_contract_and_korean_newlines(monkeypatch):
         {**payload(), "model": "other"},
     ],
 )
-def test_invalid_requests_never_call_model(body):
-    response = TestClient(create_app()).post("/api/chat", json=body)
+def test_invalid_requests_never_call_model(body, monkeypatch):
+    calls = []
+
+    async def forbidden(*args):
+        calls.append(True)
+        yield "must not be called"
+
+    response = setup(monkeypatch, forbidden).post("/api/chat", json=body)
+    assert calls == []
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "invalid_request"
     assert "input" not in response.text

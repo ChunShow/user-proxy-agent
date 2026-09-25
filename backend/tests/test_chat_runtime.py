@@ -84,3 +84,50 @@ async def test_real_deepagents_graph_sends_only_allowed_tools_and_streams_text()
     assert len(requests) == 1
     assert {t["function"]["name"] for t in requests[0]["tools"]} == {"write_todos"}
     assert requests[0]["messages"][-1]["content"] == "안녕"
+
+
+@pytest.mark.asyncio
+async def test_closing_agent_stream_closes_the_provider_connection():
+    import asyncio
+
+    from agent_service.chat.runtime import build_agent, stream_agent
+
+    closed = asyncio.Event()
+
+    class ProviderStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            data = {
+                "id": "chat1",
+                "object": "chat.completion.chunk",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": "첫 조각"},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+            yield f"data: {json.dumps(data)}\n\n".encode()
+            await asyncio.sleep(300)
+
+        async def aclose(self):
+            closed.set()
+
+    async def handler(request):
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, stream=ProviderStream()
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        model = ChatOpenAI(
+            model="test-chat",
+            api_key="fake",
+            base_url="https://model.test/v1",
+            http_async_client=client,
+            streaming=True,
+            max_retries=0,
+        )
+        stream = stream_agent(build_agent(model), [{"role": "user", "content": "시작"}])
+        assert await anext(stream) == "첫 조각"
+        await stream.aclose()
+        await asyncio.wait_for(closed.wait(), timeout=1)
