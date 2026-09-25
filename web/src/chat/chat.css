@@ -135,3 +135,11 @@
   .conversation.is-empty { padding-top: 12px; padding-bottom: 12px; }
   .empty-chat h2 { font-size: 24px; margin-bottom: 8px; }
 }
+
+.reply-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.reply-feedback:has(> .sr-only:only-child) { margin: 0; }
+.reply-feedback button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.reply-feedback button:hover { background: var(--soft); }
+.latest-message { align-self: center; display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); color: var(--ink); font-size: 12px; }
+.latest-message svg { width: 16px; transform: rotate(180deg); }
+.latest-message:hover { background: var(--soft); }

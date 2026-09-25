@@ -4,6 +4,11 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/health', route => route.fulfill({
     json: { status: 'ok', service: 'agent-service' },
   }))
+  await page.route('**/api/chat', route => {
+    const { request_id } = route.request().postDataJSON()
+    const frame = (event: string, extra = {}) => `event: ${event}\ndata: ${JSON.stringify({ request_id, message_id: 'fixture-reply', ...extra })}\n\n`
+    return route.fulfill({ contentType: 'text/event-stream', body: frame('start') + frame('delta', { text: '테스트 응답입니다.' }) + frame('done') })
+  })
 })
 
 test('adds local messages, rejects blanks, preserves multiline input and focus', async ({ page }) => {
@@ -13,18 +18,18 @@ test('adds local messages, rejects blanks, preserves multiline input and focus',
   await input.fill('   ')
   await expect(add).toBeDisabled()
   await input.press('Enter')
-  await expect(page.getByRole('listitem')).toHaveCount(0)
+  await expect(page.locator('.message.user')).toHaveCount(0)
   await input.fill('내일')
   await input.press('Shift+Enter')
   await input.pressSequentially('일정')
   await expect(input).toHaveValue('내일\n일정')
   await input.press('Enter')
-  await expect(page.getByRole('listitem')).toHaveCount(1)
-  await expect(page.getByRole('listitem')).toHaveText(/내일\s+일정/)
+  await expect(page.locator('.message.user')).toHaveCount(1)
+  await expect(page.locator('.message.user')).toHaveText(/내일\s+일정/)
   await expect(input).toHaveValue('')
   await expect(input).toBeFocused()
   await page.reload()
-  await expect(page.getByRole('listitem')).toHaveCount(0)
+  await expect(page.locator('.message.user')).toHaveCount(0)
 })
 
 test('does not submit Korean text while IME composition is active', async ({ page }) => {
@@ -33,11 +38,11 @@ test('does not submit Korean text while IME composition is active', async ({ pag
   await input.fill('병원')
   await input.dispatchEvent('compositionstart')
   await input.dispatchEvent('keydown', { key: 'Enter', isComposing: true, keyCode: 229 })
-  await expect(page.getByRole('listitem')).toHaveCount(0)
+  await expect(page.locator('.message.user')).toHaveCount(0)
   await expect(input).toHaveValue('병원')
   await input.dispatchEvent('compositionend')
   await input.press('Enter')
-  await expect(page.getByRole('listitem')).toHaveCount(1)
+  await expect(page.locator('.message.user')).toHaveCount(1)
 })
 
 for (const [width, height] of [[1440, 900], [390, 844], [320, 420]]) {
@@ -175,7 +180,7 @@ for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 568]]
     const input = page.getByRole('textbox', { name: '메시지' })
     await input.fill('긴 한국어 문장입니다. '.repeat(20) + 'https://example.test/' + 'longsegment'.repeat(50))
     await input.press('Enter')
-    await expect(page.getByRole('listitem')).toHaveCount(1)
+    await expect(page.locator('.message.user')).toHaveCount(1)
     const geometry = await page.evaluate(() => {
       const message = document.querySelector('.message-bubble')!.getBoundingClientRect()
       const composer = document.querySelector('.composer')!.getBoundingClientRect()
@@ -197,7 +202,7 @@ for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 568]]
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
     expect(errors).toEqual([])
     expect(apiRequests.length).toBeGreaterThan(0)
-    expect(apiRequests.every(path => path === '/api/health')).toBe(true)
+    expect(apiRequests.every(path => ['/api/health', '/api/chat'].includes(path))).toBe(true)
   })
 }
 

@@ -2,6 +2,9 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'notice'
   text: string
+  status?: 'submitting' | 'streaming' | 'completed' | 'stopped' | 'failed'
+  error?: string
+  retryable?: boolean
 }
 
 export type TaskStatus = 'working' | 'needs_input' | 'succeeded' | 'incomplete'

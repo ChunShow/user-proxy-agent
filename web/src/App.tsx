@@ -6,9 +6,10 @@ import MessageList from './chat/MessageList'
 import { createPreview, previewMessages, previewOptions } from './chat/preview'
 import type { PreviewId } from './chat/preview'
 import type { CallAction, ChatMessage } from './chat/types'
+import useChat from './chat/useChat'
 
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const chat = useChat()
   const [exampleMessages, setExampleMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [preview, setPreview] = useState(new URLSearchParams(location.search).get('preview') === 'call')
@@ -38,18 +39,22 @@ export default function App() {
     }
   }
   function submit(text: string) {
+    if (!preview) {
+      if (chat.send(text)) setDraft('')
+      return
+    }
     const message: ChatMessage = {
       id: crypto.randomUUID(), role: 'user',
       text: target && preview && call.callStatus === 'connected' ? `지시 예시 · ${call.subject}\n${text}` : text,
     }
-    if (preview) setExampleMessages(previous => [...previous, message])
-    else setMessages(previous => [...previous, message])
+    setExampleMessages(previous => [...previous, message])
     setDraft(''); setTarget(false)
   }
-  return <ChatView messages={preview ? exampleMessages : messages} preview={preview} onNavigate={next => {
+  return <ChatView messages={preview ? exampleMessages : chat.messages} onRetry={preview ? undefined : chat.retry} preview={preview} onNavigate={next => {
+    if (next) chat.stop()
     setPreview(next); setTarget(false)
     history.replaceState(null, '', next ? '/?preview=call' : '/')
-  }} composer={<Composer value={draft} onChange={setDraft} inputRef={input}
+  }} composer={<Composer preview={preview} busy={!preview && chat.busy} onStop={chat.stop} value={draft} onChange={setDraft} inputRef={input}
     targetLabel={target ? call.subject : undefined} onClearTarget={() => { setTarget(false); input.current?.focus() }} onSubmit={submit} />}>
     {preview && <>
       <div className="preview-tools">

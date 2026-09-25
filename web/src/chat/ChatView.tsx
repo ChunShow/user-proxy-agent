@@ -12,23 +12,35 @@ interface Props {
   onNavigate: (preview: boolean) => void
   composer: ReactNode
   children?: ReactNode
+  onRetry?: () => void
 }
 
-export default function ChatView({ messages, preview, onNavigate, composer, children }: Props) {
+export default function ChatView({ messages, preview, onNavigate, composer, children, onRetry }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
-  const previous = useRef({ preview, count: messages.length })
+  const previous = useRef({ preview, userId: messages.filter(m => m.role === 'user').at(-1)?.id })
+  const following = useRef(true)
+  const [showLatest, setShowLatest] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const isEmpty = messages.length === 0 && !preview
   useEffect(() => {
-    if (previous.current.preview !== preview) scroller.current?.scrollTo(0, 0)
-    else if (messages.length > previous.current.count) bottom.current?.scrollIntoView({ block: 'nearest' })
-    previous.current = { preview, count: messages.length }
-  }, [messages.length, preview])
+    const userId = messages.filter(m => m.role === 'user').at(-1)?.id
+    const scroll = scroller.current
+    if (!scroll) return
+    if (previous.current.preview !== preview) {
+      following.current = true
+      scroll.scrollTop = 0
+    } else {
+      if (userId !== previous.current.userId) following.current = true
+      if (following.current) scroll.scrollTop = scroll.scrollHeight
+    }
+    previous.current = { preview, userId }
+  }, [messages, preview])
   function navigate(next: boolean) {
+    setShowLatest(false)
     onNavigate(next)
     dialog.current?.close()
   }
@@ -56,17 +68,27 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
         <ConnectionStatus />
       </header>
       <div className={`chat-workspace ${isEmpty ? 'is-start' : ''}`}>
-        <div className="conversation-scroll" ref={scroller}>
+        <div className="conversation-scroll" ref={scroller} onScroll={() => {
+          const scroll = scroller.current
+          if (!scroll) return
+          following.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 64
+          setShowLatest(!following.current)
+        }}>
           <div className={`conversation ${isEmpty ? 'is-empty' : ''}`}>
             {isEmpty && <div className="empty-chat">
               <h2>어떤 일을 도와드릴까요?</h2>
               <p>확인하거나 부탁할 일을 편하게 적어 주세요.</p>
             </div>}
             {children}
-            <MessageList messages={messages} />
+            <MessageList messages={messages} onRetry={onRetry} />
             <div ref={bottom} />
           </div>
         </div>
+        {!preview && showLatest && <button className="latest-message" type="button" onClick={() => {
+          following.current = true
+          bottom.current?.scrollIntoView({ block: 'end' })
+          setShowLatest(false)
+        }}>최신 메시지로 <Icon name="arrow" /></button>}
         {composer}
       </div>
     </main>

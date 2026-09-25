@@ -184,13 +184,13 @@ SSE 이벤트의 `data`는 JSON이다. 공통 필드는 `request_id`와 서버 �
 인터페이스: `streamChat(request, signal, onEvent): Promise<void>`와 위 상태 모델의 `useChat`.
 통화 예시는 현재 로컬 상태를 계속 사용한다. 프론트에서 공급자 API를 직접 호출하지 않는다.
 
-- [ ] 분리된 TCP chunk/다중 SSE 이벤트/UTF-8 경계/EOF(done 누락)/잘못된 이벤트의 parser 테스트를 작성한다.
-- [ ] 대기·부분 응답·완료·실패·중단 상태와 중복 전송 방지를 구현한다.
-- [ ] 같은 탭 문맥, 부분 응답 제외, 재시도 시 사용자 메시지 중복 없음, 다음 초안 보존을 검증한다.
-- [ ] 최신 메시지로 이동, 위로 읽기 유지, IME·키보드·모바일 조작을 검증한다.
-- [ ] 기존 UI 테스트는 메인 채팅 요청을 fixture로 모사하도록 수정하고 통화 예시 검증은 유지한다.
+- [x] 분리된 TCP chunk/다중 SSE 이벤트/UTF-8 경계/EOF(done 누락)/잘못된 이벤트의 parser 테스트를 작성한다.
+- [x] 대기·부분 응답·완료·실패·중단 상태와 중복 전송 방지를 구현한다.
+- [x] 같은 탭 문맥, 부분 응답 제외, 재시도 시 사용자 메시지 중복 없음, 다음 초안 보존을 검증한다.
+- [x] 최신 메시지로 이동, 위로 읽기 유지, IME·키보드·모바일 조작을 검증한다.
+- [x] 기존 UI 테스트는 메인 채팅 요청을 fixture로 모사하도록 수정하고 통화 예시 검증은 유지한다.
   새 테스트는 네트워크 요청이 `/api/health`와 `/api/chat`에만 발생하는지 확인한다.
-- [ ] 브라우저 검증 후 UI 캡처와 함께 커밋한다.
+- [x] 브라우저 검증 후 UI 캡처와 함께 커밋한다.
 
 검증: `cd web && npm test && npm run typecheck && npm run lint && npm run build`;
 `PLAYWRIGHT_CHANNEL=chrome npm run test:e2e`.
@@ -232,3 +232,8 @@ SSE 이벤트의 `data`는 JSON이다. 공통 필드는 `request_id`와 서버 �
   `delete`까지 제외하고 공식 TodoListMiddleware를 명시해 모델에 `write_todos`만 전달됨을 검증했다.
 - ASGI 2.4+의 기본 StreamingResponse는 공급자가 조용할 때 즉시 disconnect를 듣지 않았다.
   전송과 disconnect를 함께 감시하는 response를 구현했다. 실제 HTTP 테스트에서 1초 내 upstream 정리를 검증했다.
+
+- 웹 API/스트림 테스트 16개와 브라우저 E2E 22개 통과, TypeScript·ESLint·빌드 통과.
+- 중단 버튼의 type이 submit으로 바뀌면서 초안을 전송하는 브라우저 기본 동작을 발견했다.
+  클릭 기본 동작을 취소해 수정했으며, 중단·초안 보존·늦은 토큰 무시 회귀 테스트를 추가했다.
+- Impeccable 점검 결과 탐지 항목 없음. 기존 UI 디자인을 유지하고 답변 상태·중단·재시도·최신 메시지 이동을 추가했다.
