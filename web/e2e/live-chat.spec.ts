@@ -1,19 +1,20 @@
 import { expect, test } from '@playwright/test'
+import { mockConversations } from './fixtures'
 
-const frame = (requestId: string, event: string, extra = {}) => `event: ${event}\ndata: ${JSON.stringify({ request_id: requestId, message_id: 'reply-id', ...extra })}\n\n`
+const frame = (body: { request_id: string; conversation_id: string }, event: string, extra = {}) => `event: ${event}\ndata: ${JSON.stringify({ request_id: body.request_id, conversation_id: body.conversation_id, user_message_id: 'user-id', message_id: 'reply-id', ...extra })}\n\n`
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/health', route => route.fulfill({ json: { status: 'ok', service: 'agent-service' } }))
+  await mockConversations(page)
 })
 
-test('sends completed context, retries without duplicate user messages, and preserves the next draft', async ({ page }) => {
-  const calls: { messages: { role: string; content: string }[] }[] = []
+test('sends only new input, retries without duplicate users, and preserves the next draft', async ({ page }) => {
+  const calls: { content?: string; retry_message_id?: string; conversation_id: string }[] = []
   await page.route('**/api/chat', route => {
     const body = route.request().postDataJSON()
     calls.push(body)
     const reply = calls.length === 1
-      ? frame(body.request_id, 'start') + frame(body.request_id, 'delta', { text: '미완료 응답' }) + frame(body.request_id, 'error', { code: 'provider_unavailable', message: 'secret', retryable: true })
-      : frame(body.request_id, 'start') + frame(body.request_id, 'delta', { text: '완료된 답변' }) + frame(body.request_id, 'done')
+      ? frame(body, 'start') + frame(body, 'delta', { text: '미완료 응답' }) + frame(body, 'error', { code: 'provider_unavailable', message: 'secret', retryable: true })
+      : frame(body, 'start', calls.length > 2 ? { message_id: 'reply-2', user_message_id: 'user-2' } : {}) + frame(body, 'delta', { text: '완료된 답변', ...(calls.length > 2 ? { message_id: 'reply-2' } : {}) }) + frame(body, 'done', calls.length > 2 ? { message_id: 'reply-2' } : {})
     return route.fulfill({ contentType: 'text/event-stream', body: reply })
   })
   await page.goto('/')
@@ -26,17 +27,15 @@ test('sends completed context, retries without duplicate user messages, and pres
   await page.getByRole('button', { name: '다시 시도', exact: true }).click()
   await expect(page.getByText('완료된 답변', { exact: true })).toBeVisible()
   await expect(input).toHaveValue('다음 초안')
-  expect(calls[1].messages).toEqual([{ role: 'user', content: '첫 질문' }])
+  expect(calls[1].retry_message_id).toBe('reply-id')
+  expect(calls[1].content).toBeUndefined()
   await expect(page.locator('.message.user')).toHaveCount(1)
   await input.press('Enter')
   await expect(page.locator('.message.user')).toHaveCount(2)
   await expect.poll(() => calls.length).toBe(3)
-  expect(calls[2].messages).toEqual([
-    { role: 'user', content: '첫 질문' }, { role: 'assistant', content: '완료된 답변' },
-    { role: 'user', content: '다음 초안' },
-  ])
-  await page.reload()
-  await expect(page.getByRole('listitem')).toHaveCount(0)
+  expect(calls[2].content).toBe('다음 초안')
+  expect(calls[2].conversation_id).toBe(calls[0].conversation_id)
+  expect(calls.every(body => !('messages' in body))).toBe(true)
 })
 
 test('streams incrementally, stops locally, ignores late tokens and keeps the typed draft', async ({ page }) => {
@@ -44,10 +43,10 @@ test('streams incrementally, stops locally, ignores late tokens and keeps the ty
     const original = window.fetch
     window.fetch = async (url, init) => {
       if (url !== '/api/chat') return original(url, init)
-      const { request_id } = JSON.parse(String(init?.body))
+      const { request_id, conversation_id } = JSON.parse(String(init?.body))
       const encoder = new TextEncoder()
       return new Response(new ReadableStream({ start(controller) {
-        const push = (type: string, extra = {}) => controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify({ request_id, message_id: 'stream-id', ...extra })}\n\n`))
+        const push = (type: string, extra = {}) => controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify({ request_id, conversation_id, user_message_id: 'stream-user', message_id: 'stream-id', ...extra })}\n\n`))
         push('start'); push('delta', { text: '첫 번째 조각' })
         setTimeout(() => { try { push('delta', { text: ' 늦게 도착한 조각' }); push('done'); controller.close() } catch { /* cancelled reader */ } }, 1500)
       } }), { headers: { 'Content-Type': 'text/event-stream' } })
@@ -87,7 +86,8 @@ test('preview navigation aborts live work and does not send fixture messages to 
   await page.getByRole('textbox', { name: '메시지' }).press('Enter')
   expect(requests).toBe(1)
   await page.getByRole('button', { name: '메인 대화', exact: true }).click()
-  await expect(page.getByText('응답을 중단했습니다.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '응답 중단' })).not.toBeVisible()
+  expect(requests).toBe(1)
 })
 
 test('reading older messages is not interrupted by new streaming text', async ({ page }) => {
@@ -96,10 +96,10 @@ test('reading older messages is not interrupted by new streaming text', async ({
     const original = window.fetch
     window.fetch = async (url, init) => {
       if (url !== '/api/chat') return original(url, init)
-      const { request_id } = JSON.parse(String(init?.body))
+      const { request_id, conversation_id } = JSON.parse(String(init?.body))
       const encoder = new TextEncoder()
       return new Response(new ReadableStream({ start(controller) {
-        const push = (event: string, extra = {}) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify({ request_id, message_id: 'long-reply', ...extra })}\n\n`))
+        const push = (event: string, extra = {}) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify({ request_id, conversation_id, user_message_id: 'long-user', message_id: 'long-reply', ...extra })}\n\n`))
         push('start'); push('delta', { text: '확인할 내용입니다.\n'.repeat(80) })
         Object.assign(window, { appendTestReply: () => { push('delta', { text: '\n마지막으로 추가된 내용입니다.' }); push('done'); controller.close() } })
       } }), { headers: { 'Content-Type': 'text/event-stream' } })

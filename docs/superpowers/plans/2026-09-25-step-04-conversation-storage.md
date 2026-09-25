@@ -127,7 +127,7 @@ line `#e5e5e3`, soft `#f0f0ee`와 한국어 시스템 글꼴을 유지한다.
 ### 1. SQLite 저장소와 브라우저 세션
 
 **Files:** 새 `backend/src/agent_service/storage.py`, `backend/src/agent_service/session.py`,
-`backend/tests/test_storage.py`, `backend/tests/test_session.py`;
+`backend/tests/test_session.py`;
 수정 `backend/src/agent_service/main.py`, 필요 시 `settings.py`의 비밀값과 독립된 경로 설정.
 
 **Interfaces:** `create_app(*, database_path: Path | None = None)`가 저장소를 주입한다.
@@ -135,7 +135,7 @@ line `#e5e5e3`, soft `#f0f0ee`와 한국어 시스템 글꼴을 유지한다.
 후속 라우트는 `request.app.state.store`와 `require_owner(request) -> str`를 사용한다.
 
 - [x] 세션 격리·만료·DB 재오픈 복원·스키마 재초기화 안전성·파일 권한 테스트를 먼저 실패시킨 뒤 구현한다.
-  `cd backend && uv run --locked pytest -q tests/test_storage.py tests/test_session.py` 통과 후 커밋한다.
+  `cd backend && uv run --locked pytest -q tests/test_session.py` 통과 후 커밋한다.
 
 ### 2. 서버 소유 대화 이력과 스트림 저장
 
@@ -164,7 +164,7 @@ line `#e5e5e3`, soft `#f0f0ee`와 한국어 시스템 글꼴을 유지한다.
 `ConversationList`는 목록·선택 ID·새 대화/선택/더 보기 콜백을 받는다.
 전환마다 세대 식별자로 이전 조회/스트림 결과를 무시한다. URL popstate도 같은 전환 경로를 사용한다.
 
-- [ ] 새 대화 두 개의 문맥 분리, 새로고침 복원, 뒤로 가기, 늦은 이벤트 격리,
+- [x] 새 대화 두 개의 문맥 분리, 새로고침 복원, 뒤로 가기, 늦은 이벤트 격리,
   세션 만료/조회 실패, 전송 중 전환, 입력 초안 보존, 모바일 메뉴·키보드·스크롤을 E2E로 검증하고 구현한다.
   `cd web && npm run test && npm run typecheck && npm run lint && npm run build`와
   `env -u NO_COLOR PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` 통과 후 커밋한다.
@@ -207,3 +207,15 @@ line `#e5e5e3`, soft `#f0f0ee`와 한국어 시스템 글꼴을 유지한다.
 - 대화 API 미구현으로 신규 5개 시나리오 실패를 확인한 뒤 구현했다.
 - backend 전체 40개 테스트와 ruff 통과. 실제 HTTP 연결 해제 후 1초 안에 공급자 정리 및 부분 응답 저장을 검증했다.
 - 별도 owner 차단, 재시작 복원, 동시 전송 단일 실행, 동일 요청 중복 방지, 저장 실패 시 done 미발행, 페이지 경계와 문맥 제한을 확인했다.
+
+### 작업 3 검증 (2026-09-26)
+
+- 신규 대화 복원/전환/모바일 시나리오 3개 실패를 확인한 후 UI를 구현했다.
+- 기존 E2E를 새 API 계약에 맞춰 옮겼다. 예시와 실제 대화의 초안도 각각 보존한다.
+- 최초 세션 실패 후 복구 불가를 회귀 테스트로 재현해 수정했다. 복구 테스트는 전송 활성화를 기다린 뒤 입력한다.
+- 늦은 조회 결과 격리, 페이지 경계 중복 제거와 읽는 위치 보존을 추가 검증했다.
+- 웹 단위 테스트 17개·타입·lint·빌드 통과. 전체 E2E 27개 통과 후 추가 페이지 검증을 포함한 저장 기능 6개 통과.
+- 저장소 테스트는 별도 test_storage.py 대신 test_session.py와 test_chat_persistence.py에 책임별로 배치했다.
+- 개발 서버 수명 테스트가 사용자 DB를 열지 않도록 AGENT_SERVICE_DATABASE_PATH 주입과 회귀 테스트를 추가했다. backend 41개 통과.
+- 실제 브라우저 합성 대화에서 전환/새로고침 복원, 세션 격리, 중단 복원, 재시도를 확인했다.
+- Impeccable detector 지적 없음. 데스크톱·모바일 실화면 확인, 가로 넘침 없음.

@@ -1,15 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { mockConversations } from './fixtures'
 
-test.beforeEach(async ({ page }) => {
-  await page.route('**/api/health', route => route.fulfill({
-    json: { status: 'ok', service: 'agent-service' },
-  }))
-  await page.route('**/api/chat', route => {
-    const { request_id } = route.request().postDataJSON()
-    const frame = (event: string, extra = {}) => `event: ${event}\ndata: ${JSON.stringify({ request_id, message_id: 'fixture-reply', ...extra })}\n\n`
-    return route.fulfill({ contentType: 'text/event-stream', body: frame('start') + frame('delta', { text: '테스트 응답입니다.' }) + frame('done') })
-  })
-})
+test.beforeEach(async ({ page }) => { await mockConversations(page) })
 
 test('adds local messages, rejects blanks, preserves multiline input and focus', async ({ page }) => {
   await page.goto('/')
@@ -28,8 +20,9 @@ test('adds local messages, rejects blanks, preserves multiline input and focus',
   await expect(page.locator('.message.user')).toHaveText(/내일\s+일정/)
   await expect(input).toHaveValue('')
   await expect(input).toBeFocused()
+  await expect(page.getByText('테스트 응답입니다.', { exact: true })).toBeVisible()
   await page.reload()
-  await expect(page.locator('.message.user')).toHaveCount(0)
+  await expect(page.locator('.message.user')).toHaveCount(1)
 })
 
 test('does not submit Korean text while IME composition is active', async ({ page }) => {
@@ -62,7 +55,7 @@ for (const [width, height] of [[1440, 900], [390, 844], [320, 420]]) {
     await input.press('Enter')
     await expect(input).toBeFocused()
     await expect(input).toBeInViewport({ ratio: 1 })
-    await expect(page.getByText('병원 진료 시간을 확인해 줘', { exact: true })).toBeInViewport({ ratio: 1 })
+    await expect(page.locator('.message.user').getByText('병원 진료 시간을 확인해 줘', { exact: true })).toBeInViewport({ ratio: 1 })
     const bottomGap = await input.evaluate(element => innerHeight - element.getBoundingClientRect().bottom)
     expect(bottomGap).toBeLessThan(120)
   })
@@ -115,7 +108,7 @@ test('call controls keep listening, call lifetime and goal outcome separate', as
   await expect(card.getByText('통화 종료됨', { exact: true })).toBeVisible()
   await expect(card.getByText('미완료', { exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '추가 지시' })).toBeDisabled()
-  expect(mutations).toEqual([])
+  expect(mutations.every(url => new URL(url).pathname === '/api/session')).toBe(true)
 })
 
 test('steering targets the call, clears after submission, and keeps normal chat usable', async ({ page }) => {
@@ -142,7 +135,8 @@ test('preview navigation preserves drafts and six states have honest controls', 
   await input.fill('작성 중인 내용')
   await page.getByRole('button', { name: '화면 예시', exact: true }).click()
   await expect(page).toHaveURL(/preview=call/)
-  await expect(input).toHaveValue('작성 중인 내용')
+  await expect(input).toHaveValue('')
+  await input.fill('예시 전용 초안')
   const state = page.getByRole('combobox', { name: '통화 예시 상태' })
   const card = page.getByRole('article', { name: '예시 병원 통화' })
   for (const [option, call, goal, active] of [
@@ -202,7 +196,7 @@ for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 568]]
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
     expect(errors).toEqual([])
     expect(apiRequests.length).toBeGreaterThan(0)
-    expect(apiRequests.every(path => ['/api/health', '/api/chat'].includes(path))).toBe(true)
+    expect(apiRequests.every(path => ['/api/health', '/api/chat', '/api/session', '/api/conversations'].includes(path) || path.startsWith('/api/conversations/'))).toBe(true)
   })
 }
 

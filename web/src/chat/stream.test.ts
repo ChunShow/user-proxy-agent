@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { afterEach, mock, test } from 'node:test'
 
-const request = { request_id: 'request-1', messages: [{ role: 'user' as const, content: '안녕' }] }
-const frame = (event: string, extra = {}) => `event: ${event}\ndata: ${JSON.stringify({ request_id: 'request-1', message_id: 'message-1', ...extra })}\n\n`
+const request = { request_id: 'request-1', conversation_id: 'conversation-1', content: '안녕' }
+const frame = (event: string, extra = {}) => `event: ${event}\ndata: ${JSON.stringify({ request_id: 'request-1', message_id: 'message-1', conversation_id: 'conversation-1', user_message_id: 'user-1', ...extra })}\n\n`
 afterEach(() => mock.restoreAll())
 
 function response(text: string, bytewise = false) {
@@ -32,6 +32,7 @@ for (const [label, body] of [
   ['truncated', frame('start') + frame('delta', { text: '일부' })],
   ['out of order', frame('delta', { text: 'x' })],
   ['invalid payload', frame('start') + frame('delta', { text: 42 })],
+  ['wrong conversation', frame('start', { conversation_id: 'other' })],
   ['wrong request', frame('start', { request_id: 'old-request' })],
   ['malformed JSON', 'event: start\ndata: {bad}\n\n'],
   ['message changed', frame('start') + frame('done', { message_id: 'other' })],

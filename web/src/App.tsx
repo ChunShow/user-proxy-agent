@@ -11,8 +11,11 @@ import useChat from './chat/useChat'
 export default function App() {
   const chat = useChat()
   const [exampleMessages, setExampleMessages] = useState<ChatMessage[]>([])
-  const [draft, setDraft] = useState('')
-  const [preview, setPreview] = useState(new URLSearchParams(location.search).get('preview') === 'call')
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const preview = chat.preview
+  const draftKey = preview ? 'preview' : chat.selectedId ?? 'new'
+  const draft = drafts[draftKey] ?? ''
+  const setDraft = (text: string) => setDrafts(previous => ({ ...previous, [draftKey]: text }))
   const [example, setExample] = useState<PreviewId>('connected')
   const [call, setCall] = useState(() => createPreview('connected'))
   const [target, setTarget] = useState(false)
@@ -50,12 +53,17 @@ export default function App() {
     setExampleMessages(previous => [...previous, message])
     setDraft(''); setTarget(false)
   }
-  return <ChatView messages={preview ? exampleMessages : chat.messages} onRetry={preview ? undefined : chat.retry} preview={preview} onNavigate={next => {
+  return <ChatView messages={preview ? exampleMessages : chat.messages} onRetry={preview ? undefined : chat.retry} preview={preview}
+    conversationId={chat.selectedId} conversations={chat.items} onNewConversation={() => { setTarget(false); setDrafts(previous => ({ ...previous, new: '' })); chat.newConversation() }} onSelectConversation={id => { setTarget(false); chat.open(id) }}
+    listError={chat.listError} hasMoreConversations={Boolean(chat.listCursor)} onMoreConversations={chat.moreList} onReloadList={chat.refreshList}
+    loading={!preview && chat.loading} loadError={!preview ? chat.loadError : ''} onReload={chat.refresh}
+    hasMoreMessages={!preview && Boolean(chat.messageCursor)} onMoreMessages={chat.loadMore} pageError={chat.pageError}
+    remoteBusy={!preview && chat.remoteBusy}
+    onNavigate={next => {
     if (next) chat.stop()
-    setPreview(next); setTarget(false)
-    history.replaceState(null, '', next ? '/?preview=call' : '/')
-  }} composer={<Composer preview={preview} busy={!preview && chat.busy} onStop={chat.stop} value={draft} onChange={setDraft} inputRef={input}
-    targetLabel={target ? call.subject : undefined} onClearTarget={() => { setTarget(false); input.current?.focus() }} onSubmit={submit} />}>
+    chat.navigate(next); setTarget(false)
+  }} composer={<Composer preview={preview} disabled={!preview && (!chat.ready || chat.loading || Boolean(chat.loadError) || chat.remoteBusy)} busy={!preview && chat.busy} onStop={chat.stop} value={draft} onChange={setDraft} inputRef={input}
+    targetLabel={preview && target ? call.subject : undefined} onClearTarget={() => { setTarget(false); input.current?.focus() }} onSubmit={submit} />}>
     {preview && <>
       <div className="preview-tools">
         <p className="preview-banner">예시 데이터 · 실제 전화가 연결되지 않습니다</p>

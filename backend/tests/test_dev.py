@@ -47,7 +47,8 @@ def launch(backend_port, web_port, output):
     return subprocess.Popen(
         ["bash", str(ROOT / "scripts/dev.sh")],
         cwd=ROOT,
-        env={**os.environ, "BACKEND_PORT": str(backend_port), "WEB_PORT": str(web_port)},
+        env={**os.environ, "BACKEND_PORT": str(backend_port), "WEB_PORT": str(web_port),
+             "AGENT_SERVICE_DATABASE_PATH": str(Path(output.name).parent / "test.sqlite3")},
         stdout=output,
         stderr=subprocess.STDOUT,
     )

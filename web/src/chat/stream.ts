@@ -1,16 +1,28 @@
 export interface ChatRequest {
   request_id: string
-  messages: { role: 'user' | 'assistant'; content: string }[]
+  conversation_id: string
+  content?: string
+  retry_message_id?: string
 }
 export interface StreamEvent {
   type: 'start' | 'delta' | 'done'
   request_id: string
   message_id: string
+  conversation_id: string
+  user_message_id?: string
   text?: string
 }
 const errors: Record<string, [string, boolean]> = {
+  not_found: ['대화를 찾을 수 없습니다.', false],
+  session_expired: ['세션이 만료되었습니다. 화면을 새로 불러와 주세요.', false],
+  storage_unavailable: ['대화를 저장하지 못했습니다. 다시 불러와 확인해 주세요.', true],
+  conversation_busy: ['다른 창에서 답변을 작성하고 있습니다.', false],
+  request_exists: ['이미 접수된 요청입니다. 저장된 대화를 불러옵니다.', false],
+  request_conflict: ['전송 내용이 기존 요청과 다릅니다. 다시 불러와 주세요.', false],
+  invalid_retry: ['이 응답은 다시 시도할 수 없습니다. 대화를 다시 불러와 주세요.', false],
+  load_failed: ['대화를 불러오지 못했습니다. 다시 불러와 주세요.', false],
   not_configured: ['서버의 모델 설정을 확인해 주세요.', false],
-  invalid_request: ['메시지 길이를 확인해 주세요. 대화가 길면 새로고침해 주세요.', false],
+  invalid_request: ['메시지 길이를 확인해 주세요. 대화가 길면 새 대화를 시작해 주세요.', false],
   provider_auth: ['모델 인증에 실패했습니다. 서버 설정을 확인해 주세요.', false],
   rate_limited: ['사용량 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.', true],
   provider_unavailable: ['응답을 받지 못했습니다. 다시 시도해 주세요.', true],
@@ -19,10 +31,12 @@ const errors: Record<string, [string, boolean]> = {
 }
 export class ChatError extends Error {
   retryable: boolean
+  code: string
   constructor(code: string) {
     const [message, retryable] = errors[code] ?? errors.provider_unavailable
     super(message)
     this.retryable = retryable
+    this.code = code
   }
 }
 
@@ -63,8 +77,11 @@ export async function streamChat(request: ChatRequest, signal: AbortSignal, onEv
         const type = lines.find(line => line.startsWith('event:'))?.slice(6).trim()
         let data: Record<string, unknown>
         try { data = JSON.parse(lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')) } catch { throw new ChatError('invalid_stream') }
-        if (!data || data.request_id !== request.request_id || typeof data.message_id !== 'string') throw new ChatError('invalid_stream')
-        if (type === 'start' && !messageId) messageId = data.message_id
+        if (!data || data.request_id !== request.request_id || data.conversation_id !== request.conversation_id || typeof data.message_id !== 'string') throw new ChatError('invalid_stream')
+        if (type === 'start' && !messageId) {
+          if (typeof data.user_message_id !== 'string') throw new ChatError('invalid_stream')
+          messageId = data.message_id
+        }
         else if (!messageId || data.message_id !== messageId || type === 'start') throw new ChatError('invalid_stream')
         if (type === 'error') throw new ChatError(typeof data.code === 'string' ? data.code : 'provider_unavailable')
         if (type !== 'start' && type !== 'delta' && type !== 'done') throw new ChatError('invalid_stream')
@@ -72,7 +89,7 @@ export async function streamChat(request: ChatRequest, signal: AbortSignal, onEv
         total += typeof data.text === 'string' ? data.text.length : 0
         if (total > 1_048_576) throw new ChatError('invalid_stream')
         combined.throwIfAborted()
-        onEvent({ type, request_id: request.request_id, message_id: messageId, text: typeof data.text === 'string' ? data.text : undefined })
+        onEvent({ type, request_id: request.request_id, message_id: messageId, conversation_id: request.conversation_id, user_message_id: typeof data.user_message_id === 'string' ? data.user_message_id : undefined, text: typeof data.text === 'string' ? data.text : undefined })
         if (type === 'done') { finished = true; break }
       }
       if (done && !finished) throw new ChatError('invalid_stream')

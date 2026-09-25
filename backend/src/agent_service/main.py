@@ -1,5 +1,6 @@
 """Local service entry point. Startup does not contact external providers."""
 
+import os
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -24,7 +25,8 @@ class HealthResponse(BaseModel):
 
 def create_app(*, database_path: Path | None = None) -> FastAPI:
     store = ConversationStore(
-        database_path or Path(__file__).resolve().parents[3] / "data/agent-service.sqlite3"
+        database_path or Path(os.environ.get("AGENT_SERVICE_DATABASE_PATH",
+            str(Path(__file__).resolve().parents[3] / "data/agent-service.sqlite3")))
     )
 
     @asynccontextmanager

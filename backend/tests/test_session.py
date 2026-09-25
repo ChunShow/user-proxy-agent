@@ -60,3 +60,11 @@ def test_session_rejects_foreign_origin_and_forms(tmp_path, monkeypatch):
             == 204
         )
         assert client.post("/api/session", json={}, headers={"Origin": "null"}).status_code == 403
+
+
+def test_process_database_override_keeps_launcher_tests_out_of_user_data(tmp_path, monkeypatch):
+    path = tmp_path / 'isolated' / 'test.sqlite3'
+    monkeypatch.setenv('AGENT_SERVICE_DATABASE_PATH', str(path))
+    assert create_app().state.store.path == path
+    explicit = tmp_path / 'explicit.sqlite3'
+    assert create_app(database_path=explicit).state.store.path == explicit

@@ -11,6 +11,7 @@ export default function MessageList({ messages, label = '대화 내역', onRetry
         {message.status === 'submitting' ? '답변을 준비하고 있습니다.'
           : message.status === 'streaming' ? '답변 작성 중'
           : message.status === 'stopped' ? '응답을 중단했습니다.'
+          : message.status === 'interrupted' ? '연결이 끊겨 응답이 중단되었습니다.'
           : message.status === 'failed' ? message.error : '답변이 완료되었습니다.'}
       </span>
       {onRetry && index === messages.length - 1 && message.retryable &&
