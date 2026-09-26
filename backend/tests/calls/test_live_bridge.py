@@ -3,6 +3,7 @@ import base64
 import json
 
 import pytest
+import pytest_asyncio
 
 
 @pytest.mark.asyncio
@@ -185,3 +186,194 @@ async def test_progress_separates_generated_sent_and_acked_audio_and_records_sto
     assert store.activity(owner, call)["events"][-1]["content"]["interrupted"] is False
     await bridge._clear_output(interrupted=True)
     assert store.activity(owner, call)["events"][-1]["content"]["interrupted"] is True
+
+
+@pytest_asyncio.fixture
+async def ending_bridge(monkeypatch):
+    from types import SimpleNamespace
+
+    from test_native_audio import Socket, until
+
+    from agent_service.calls import live_bridge
+
+    clock = [100.0]
+    monkeypatch.setattr(live_bridge, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+
+    class Model(Socket):
+        async def send(self, raw):
+            await super().send(raw)
+            e = json.loads(raw)
+            if e["type"].endswith(".append"):
+                await self.input.put({"type": e["type"] + "ed", "client_event_id": e["event_id"]})
+
+    class Media:
+        def __init__(self):
+            self.input = asyncio.Queue()
+            self.sent = []
+            self.gate = asyncio.Event()
+            self.gate.set()
+
+        async def events(self):
+            while True:
+                yield await self.input.get()
+
+        async def send(self, event):
+            if event["event"] == "media":
+                await self.gate.wait()
+            self.sent.append(event)
+
+    model, media = Model(), Media()
+    bridge = live_bridge.LiveBridge(model, listen_first=True)
+    bridge.media = media
+    bridge.ready.set()
+    tasks = [asyncio.create_task(f()) for f in (bridge.receive, bridge.play, bridge.phone)]
+    await bridge.end_call("goal_achieved", "합성 시험 결과", spoken_result="안녕히 계세요")
+
+    async def audio(raw):
+        before = bridge.generated_bytes
+        await model.input.put(
+            {"type": "session.output_audio.delta", "delta": base64.b64encode(raw).decode()}
+        )
+        await until(lambda: bridge.generated_bytes == before + len(raw))
+
+    async def ack():
+        marks = [e for e in media.sent if e["event"] == "mark"]
+        assert marks, "The final voiced packet must be marked even below 100ms."
+        await media.input.put(marks[-1])
+        await until(lambda: bridge.played_bytes > 0)
+
+    yield bridge, media, clock, audio, ack, tasks
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_end_waits_for_final_voice_ack_but_not_continuous_silence(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    await audio(b"\xaa" * 160)
+    await until(lambda: bridge.sent_bytes == 160)
+    clock[0] = 103
+    finish = asyncio.create_task(bridge.finish())
+    tasks.append(finish)
+    await asyncio.sleep(0.15)
+    assert not finish.done()
+    await ack()
+    await audio(b"\xff" * 3200)
+    await until(lambda: bridge.sent_bytes >= 320)
+    await asyncio.wait_for(asyncio.shield(finish), 0.5)
+    assert bridge.ending["status"] == "audio_drained"
+    assert bridge.output.qsize() > 0
+    assert bridge.played_bytes < bridge.sent_bytes
+    assert bridge.report()["end_call"]["playback"]["voice_end_bytes"] == 160
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "blocker", ["missing_ack", "new_voice", "partial_voice", "sending_voice", "no_voice"]
+)
+async def test_unfinished_voice_never_becomes_playback_success(ending_bridge, blocker):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    if blocker != "no_voice":
+        await audio(b"\xaa" * 160)
+        await until(lambda: bridge.sent_bytes == 160)
+        if blocker != "missing_ack":
+            finish = asyncio.create_task(bridge.finish())
+            tasks.append(finish)
+            await asyncio.sleep(0.15)
+            await ack()
+            finish.cancel()
+            await asyncio.gather(finish, return_exceptions=True)
+    clock[0] = 103
+    if blocker == "new_voice":
+        await audio(b"\xaa" * 160)
+        await until(lambda: bridge.sent_bytes == 320)
+    elif blocker == "partial_voice":
+        await audio(b"\xaa" * 80)
+    elif blocker == "sending_voice":
+        media.gate.clear()
+        await audio(b"\xaa" * 160)
+        await until(lambda: bridge.output.empty())
+    finish = asyncio.create_task(bridge.finish())
+    tasks.append(finish)
+    await asyncio.sleep(0.15)
+    assert not finish.done()
+    clock[0] = 126
+    await asyncio.wait_for(asyncio.shield(finish), 0.5)
+    assert bridge.ending["status"] == "playback_unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_caller_speech_cancels_pending_hangup(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    clock[0] = 101
+    await media.input.put(
+        {"event": "media", "media": {"payload": base64.b64encode(b"\xaa" * 160).decode()}}
+    )
+    await until(lambda: bridge.input_bytes == 160)
+    assert bridge.ending is None
+
+
+@pytest.mark.asyncio
+async def test_clear_invalidates_end_request_and_late_playback_marks(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    await audio(b"\xaa" * 800)
+    await until(lambda: bridge.sent_bytes == 800)
+    old = [e for e in media.sent if e["event"] == "mark"][-1]
+    await bridge._clear_output(interrupted=True)
+    await media.input.put(old)
+    await asyncio.sleep(0.02)
+    assert bridge.ending is None
+    assert bridge.played_bytes == 0
+    assert bridge.interrupted
+
+
+@pytest.mark.asyncio
+async def test_new_voice_restarts_quiet_wait_even_when_acked(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    await audio(b"\xaa" * 800)
+    await until(lambda: bridge.sent_bytes == 800)
+    await ack()
+    clock[0] = 103
+    await audio(b"\xaa" * 800)
+    await until(lambda: bridge.sent_bytes == 1600)
+    await media.input.put([e for e in media.sent if e["event"] == "mark"][-1])
+    await until(lambda: bridge.played_bytes == 1600)
+    finish = asyncio.create_task(bridge.finish())
+    tasks.append(finish)
+    await asyncio.sleep(0.15)
+    assert not finish.done()
+    clock[0] = 105.1
+    await asyncio.wait_for(asyncio.shield(finish), 0.5)
+    assert bridge.ending["status"] == "audio_drained"
+
+
+@pytest.mark.asyncio
+async def test_voice_queued_behind_silence_prevents_early_hangup(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    await audio(b"\xaa" * 800)
+    await until(lambda: bridge.sent_bytes == 800)
+    await ack()
+    media.gate.clear()
+    await audio(b"\xff" * 1600 + b"\xaa" * 160)
+    clock[0] = 103
+    finish = asyncio.create_task(bridge.finish())
+    tasks.append(finish)
+    await asyncio.sleep(0.15)
+    assert not finish.done()
+    clock[0] = 126
+    await asyncio.wait_for(asyncio.shield(finish), 0.5)
+    assert bridge.ending["status"] == "playback_unconfirmed"
+    assert bridge.ending["playback"]["pending_voice_packets"] == 1

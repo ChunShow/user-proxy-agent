@@ -37,6 +37,9 @@ class LiveBridge:
         self.last_progress = None
         self.error, self.ending = None, None
         self.last_input_sound = self.last_output_sound = 0.0
+        self.last_generated_sound = 0.0
+        self.pending_voice = self.voice_end_bytes = 0
+        self.output_epoch = 0
         self.last_digit_context = None
         self.last_input_text = ""
         self.started_at = time.monotonic()
@@ -88,6 +91,9 @@ class LiveBridge:
                     packet = bytes(self.buffer[:160])
                     del self.buffer[:160]
                     self.output.put_nowait(packet)
+                    if has_sound(packet):
+                        self.pending_voice += 1
+                        self.last_generated_sound = time.monotonic()
             elif kind in {"session.input_transcript.delta", "session.output_transcript.delta"}:
                 text = event.get("delta", "")
                 if not isinstance(text, str) or len(text) > 8000:
@@ -154,25 +160,37 @@ class LiveBridge:
         deadline = time.monotonic()
         while True:
             packet = await self.output.get()
+            epoch = self.output_epoch
+            voiced = has_sound(packet)
             deadline = max(deadline, time.monotonic() - 0.1)
             async with self.phone_lock:
+                if epoch != self.output_epoch:
+                    continue
                 await self.media.send(
                     {"event": "media", "media": {"payload": base64.b64encode(packet).decode()}}
                 )
                 self.stamp("audio_sent_first_ms")
                 self.sent_bytes += len(packet)
-                if has_sound(packet):
+                if voiced:
+                    self.pending_voice = max(0, self.pending_voice - 1)
+                    self.voice_end_bytes = self.sent_bytes
                     self.last_output_sound = time.monotonic()
                     if self.ending:
                         self.ending["heard_output"] = True
                 if self.sent_bytes % 800 == 0:
-                    name = str(self.sent_bytes)
-                    self.marks[name] = self.sent_bytes
-                    if len(self.marks) > 100:
-                        raise ProviderFailure("live_playback_unconfirmed")
-                    await self.media.send({"event": "mark", "mark": {"name": name}})
+                    await self._mark_playback()
             deadline += len(packet) / 8000
             await asyncio.sleep(max(0, deadline - time.monotonic()))
+
+    async def _mark_playback(self):
+        # Caller holds phone_lock, so the mark follows all bytes it acknowledges.
+        name = (
+            f"{self.output_epoch}:{self.sent_bytes}" if self.output_epoch else str(self.sent_bytes)
+        )
+        self.marks[name] = self.sent_bytes
+        if len(self.marks) > 100:
+            raise ProviderFailure("live_playback_unconfirmed")
+        await self.media.send({"event": "mark", "mark": {"name": name}})
 
     async def send_dtmf(self, digit):
         dtmf_message(digit)
@@ -230,19 +248,43 @@ class LiveBridge:
             end = self.ending
             if not end:
                 continue
-            elapsed = time.monotonic() - end["requested_at"]
+            # Mark a short final packet even if there is no next 100ms periodic mark.
+            # Do not wait on a blocked media send: the 25s fallback must still run.
             if (
-                end["heard_output"]
-                and time.monotonic() - self.last_output_sound > 2
-                and time.monotonic() - self.last_input_sound > 2
-                and self.output.empty()
-                and self.played_bytes >= self.sent_bytes - 640
+                self.voice_end_bytes > self.played_bytes
+                and not self.phone_lock.locked()
+                and not any(count >= self.voice_end_bytes for count in self.marks.values())
             ):
-                # No utterance-done event: this is a timing heuristic, not verified speech.
-                end["status"] = "audio_drained"
-                return
-            if elapsed > 25:
-                end["status"] = "playback_unconfirmed"
+                async with self.phone_lock:
+                    await self._mark_playback()
+            if self.ending is not end:
+                continue
+            now = time.monotonic()
+            elapsed = now - end["requested_at"]
+            quiet_output = now - max(self.last_output_sound, self.last_generated_sound)
+            quiet_input = now - self.last_input_sound
+            drained = (
+                end["heard_output"]
+                and quiet_output > 2
+                and quiet_input > 2
+                and self.pending_voice == 0
+                and not has_sound(self.buffer)
+                and self.voice_end_bytes > 0
+                and self.played_bytes >= self.voice_end_bytes
+            )
+            if drained or elapsed > 25:
+                # Activity + carrier ACK is a heuristic, not an utterance-done event.
+                end["status"] = "audio_drained" if drained else "playback_unconfirmed"
+                end["playback"] = {
+                    "wait_ms": round(elapsed * 1000),
+                    "voice_end_bytes": self.voice_end_bytes,
+                    "acked_bytes": self.played_bytes,
+                    "pending_voice_packets": self.pending_voice,
+                    "queued_packets": self.output.qsize(),
+                    "buffer_bytes": len(self.buffer),
+                    "output_quiet_ms": round(quiet_output * 1000),
+                    "input_quiet_ms": round(quiet_input * 1000),
+                }
                 return
 
     async def save_progress(self, *, force=False):
@@ -271,11 +313,14 @@ class LiveBridge:
             await self.save_progress()
 
     async def _clear_output(self, *, interrupted=False):
-        while not self.output.empty():
-            self.output.get_nowait()
-        self.buffer.clear()
-        self.marks.clear()
         async with self.phone_lock:
+            self.output_epoch += 1
+            self.ending = None
+            self.pending_voice = self.voice_end_bytes = 0
+            while not self.output.empty():
+                self.output.get_nowait()
+            self.buffer.clear()
+            self.marks.clear()
             await self.media.send({"event": "clear"})
         if interrupted:
             self.interrupted = True
