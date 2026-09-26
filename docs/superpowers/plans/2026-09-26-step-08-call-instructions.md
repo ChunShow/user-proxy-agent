@@ -81,25 +81,25 @@
 **파일:** `calls/manager.py`, `calls/delegation.py`, `calls/live_bridge.py`, `calls/instructions.py`,
 `backend/tests/calls/test_live_delegation.py`, `test_live_bridge.py`, `test_manager.py`.
 
-- [ ] manager가 실행 중 Live coordinator를 등록/해제한다. `update(owner, conversation_id,
+- [x] manager가 실행 중 Live coordinator를 등록/해제한다. `update(owner, conversation_id,
   source_user_message_id, call_id, instruction)`는 실제 세션과 연결 상태를 검증해 저장·접수만 반환한다.
   모델 ACK 대기로 채팅 요청 수명을 묶지 않는다. registry가 없는 통화는 접수하지 않는다.
-- [ ] 통화 수명에 속한 별도 작업이 pending 지시를 읽어 sending으로 전환하고 전송한다.
+- [x] 통화 수명에 속한 별도 작업이 pending 지시를 읽어 sending으로 전환하고 전송한다.
   receive 루프는 ACK를 계속 처리하며, 음성 루프와 직접 종료는 전송 대기에 막히지 않는다.
-- [ ] 조건 변경과 위임 적용을 통화별로 직렬화한다. 새 조건을 받으면 기존 coordinator 작업을
+- [x] 조건 변경과 위임 적용을 통화별로 직렬화한다. 새 조건을 받으면 기존 coordinator 작업을
   취소하고, 다음 위임 context에 전달 완료된 사용자 지시를 순서대로 포함한다.
   최신 지시가 미전달/미확인이면 이전 조건으로 작업을 계속하지 않고 변경 조건 확인이 필요하다고 처리한다.
   불확실한 지시를 다음 위임에서 자동 재전송하는 우회 경로도 만들지 않는다.
   오래된 도구 실행/종료 요청/결과 송신은 조건 버전 검사로 거절한다.
-- [ ] Live에는 대기 상태 해제와 새 사용자 조건을 명확히 구분해 전달한다. 조건 변경에 따른
+- [x] Live에는 대기 상태 해제와 새 사용자 조건을 명확히 구분해 전달한다. 조건 변경에 따른
   새로운 업무 판단은 기존 client delegation으로 요청하도록 지시한다.
   이미 생성/송신한 음성을 소급 취소했다고 주장하지 않는다.
-- [ ] 조건 갱신 중 모델의 종료 요청은 성공으로 접수하지 않고 갱신 후 다시 판단하도록 반환한다.
+- [x] 조건 갱신 중 모델의 종료 요청은 성공으로 접수하지 않고 갱신 후 다시 판단하도록 반환한다.
   이미 마지막 인사/자동 종료 대기 중이면 새 지시를 거절한다. 기존 자동 종료 취소 정책은 변경하지 않는다.
-- [ ] 명령 ACK 뒤 delivered를 기록한다. 종료와 ACK가 경합하면 저장된 상태를 확인해 미확인/미전달로 정리한다.
+- [x] 명령 ACK 뒤 delivered를 기록한다. 종료와 ACK가 경합하면 저장된 상태를 확인해 미확인/미전달로 정리한다.
   전송 도중 타임아웃·취소·서버 재시작은 sending → delivery_unknown, pending → not_applied로 처리한다.
   수신 여부를 알 수 없는 경우 재송신하지 않는다.
-- [ ] ACK 지연·누락, 지시 도착과 이전 결과/질문/종료의 경합, 직접 종료, 재시작, 다음 위임의
+- [x] ACK 지연·누락, 지시 도착과 이전 결과/질문/종료의 경합, 직접 종료, 재시작, 다음 위임의
   조건 유지 등을 모사 모델/매체와 실제 coordinator/store 조합으로 검사한다.
 
 **검증:** `cd backend && uv run --locked pytest tests/calls/test_call_instructions.py tests/calls/test_live_delegation.py tests/calls/test_live_bridge.py tests/calls/test_manager.py -q`
@@ -136,3 +136,6 @@ ACK 전에는 완료로 표시하지 않으며, 갱신 전 조건의 늦은 결�
 
 - 작업 1: 저장 기능 부재를 실패 검사로 확인한 뒤 조건 버전/지시 저장을 구현했다.
   권한·중복·동시 접수·오래된 질문 답변·ACK와 종료 경합·구버전 DB 보존을 포함한 21개 검사와 Ruff 통과.
+
+- 작업 2: ACK 수신 루프와 별도로 전달하고, 이전 질문/늦은 결과/종료·다이얼 요청을 차단했다.
+  ACK 누락·직접 종료·재시작·조건 유지 검사 포함 76개 및 Ruff 통과. 실제 외부 호출은 없다.

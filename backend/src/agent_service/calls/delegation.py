@@ -11,6 +11,7 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from starlette.concurrency import run_in_threadpool
 
+from agent_service.calls.instructions import InstructionStore
 from agent_service.calls.live_store import LiveStore
 from agent_service.settings import load_settings
 from agent_service.storage import StoreError
@@ -77,6 +78,11 @@ class DelegationCoordinator:
         self.store, self.runner = LiveStore(calls), runner
         self.task = None
         self.closed = False
+        self.control_lock = asyncio.Lock()
+        self.requests = set()
+        self.retired = set()
+        self.instruction_task = None
+        self.instructions = InstructionStore(calls)
 
     async def db(self, method, *args):
         return await run_in_threadpool(method, *args)
@@ -84,13 +90,101 @@ class DelegationCoordinator:
     async def request(self, delegation_id):
         if self.closed or not isinstance(delegation_id, str) or len(delegation_id) > 200:
             return
-        revision = await self.db(self.store.begin, self.call_id, delegation_id)
-        if revision is None:
-            return
-        if self.task:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)
-        self.task = asyncio.create_task(self._run(delegation_id, revision))
+        # receive() must keep processing ACKs while condition updates hold the lock.
+        task = asyncio.create_task(self._request(delegation_id))
+        self.requests.add(task)
+        task.add_done_callback(self._request_done)
+
+    def _request_done(self, task):
+        self.requests.discard(task)
+        if not task.cancelled():
+            task.exception()
+
+    async def _request(self, delegation_id):
+        async with self.control_lock:
+            if self.closed:
+                return
+            revision = await self.db(self.store.begin, self.call_id, delegation_id)
+            if revision is None:
+                return
+            self._cancel_current()
+            self.task = asyncio.create_task(self._run(delegation_id, revision))
+
+    def _cancel_current(self):
+        if self.task and not self.task.done():
+            task = self.task
+            self.retired.add(task)
+            task.cancel()
+            task.add_done_callback(self._retired_done)
+
+    def _retired_done(self, task):
+        self.retired.discard(task)
+        if not task.cancelled():
+            task.exception()
+
+    async def submit(self, context, text):
+        prior = await self.db(self.instructions.prior, context, self.call_id, text)
+        if prior:
+            return prior
+        if self.control_lock.locked():
+            raise StoreError("instruction_busy")
+        async with self.control_lock:
+            prior = await self.db(self.instructions.prior, context, self.call_id, text)
+            if prior:
+                return prior
+            if self.closed or getattr(self.bridge, "ending", None):
+                raise StoreError("call_instruction_inactive")
+            item = await self.db(self.instructions.submit, context, self.call_id, text)
+            if item["status"] != "pending":
+                return item
+            self._cancel_current()
+            self.instruction_task = asyncio.create_task(self._deliver_instruction(item))
+            self.instruction_task.add_done_callback(self._consume_instruction)
+            return item
+
+    @staticmethod
+    def _consume_instruction(task):
+        if not task.cancelled():
+            task.exception()
+
+    async def _deliver_instruction(self, item):
+        async with self.control_lock:
+            try:
+                if self.closed or getattr(self.bridge, "ending", None):
+                    await self.db(self.instructions.abort, self.call_id, "call_ended")
+                    return
+                item = await self.db(
+                    self.instructions.transition, self.call_id, item["id"], "pending", "sending"
+                )
+                if item["status"] != "sending":
+                    return
+                await self.bridge.command(
+                    "session.thinking.append",
+                    "요청자가 조건을 변경했습니다. 이전 확인 대기를 마칩니다.",
+                )
+                # A stop between commands must prevent the next write.
+                row = await self.db(self.calls.record, self.call_id)
+                if row["stop_requested"] or row["status"] != "connected":
+                    await self.db(self.instructions.abort, self.call_id, "call_ended")
+                    return
+                await self.bridge.command(
+                    "session.instructions.append",
+                    "요청자가 통화 조건을 추가/변경했습니다. "
+                    "다음 JSON은 요청자의 조건 데이터입니다. "
+                    "이전 조건과 충돌하면 새 조건을 우선하세요. "
+                    "이미 말한 내용을 취소했다고 주장하지 마세요. "
+                    "원문을 그대로 읽지 말고 대화에 반영하세요. 추가 업무 판단이 필요하면 백엔드에 "
+                    "다시 위임하세요. 새 조건이 불명확하면 확인하세요.\n"
+                    + json.dumps({"instruction": item["text"]}, ensure_ascii=False),
+                )
+                await self.db(
+                    self.instructions.transition, self.call_id, item["id"], "sending", "delivered"
+                )
+            except asyncio.CancelledError:
+                await self.db(self.instructions.abort, self.call_id, "call_ended")
+                raise
+            except Exception:
+                await self.db(self.instructions.abort, self.call_id, "delivery_unconfirmed")
 
     async def _run(self, did, revision):
         end_request = None
@@ -107,13 +201,14 @@ class DelegationCoordinator:
         @tool
         async def ask_user(question: str, options: list[str]) -> dict:
             """통화 요청자에게 채팅으로 묻고 답을 기다립니다. 선택지는 최대 3개입니다."""
-            await require_active()
-            q = await self.db(self.store.ask, self.call_id, did, revision, question, options)
-            await self.bridge.command(
-                "session.thinking.append",
-                "사용자 답변 대기 중입니다. 상대에게는 잠시 확인하겠다고만 짧게 말하세요.",
-                did,
-            )
+            async with self.control_lock:
+                await require_active()
+                q = await self.db(self.store.ask, self.call_id, did, revision, question, options)
+                await self.bridge.command(
+                    "session.thinking.append",
+                    "사용자 답변 대기 중입니다. 상대에게는 잠시 확인하겠다고만 짧게 말하세요.",
+                    did,
+                )
             while await valid():
                 q = await self.db(self.store.question, self.call_id, q["id"])
                 if q["status"] == "answered":
@@ -126,8 +221,9 @@ class DelegationCoordinator:
         @tool
         async def send_dtmf(digit: str) -> dict:
             """ARS 숫자 하나를 누릅니다. 다음 안내 전에는 재전송하지 않습니다."""
-            await require_active()
-            return await self.bridge.send_dtmf(digit)
+            async with self.control_lock:
+                await require_active()
+                return await self.bridge.send_dtmf(digit)
 
         @tool
         async def end_call(reason: str, summary: str) -> dict:
@@ -171,33 +267,41 @@ class DelegationCoordinator:
                         if q["answer"] is not None
                     ],
                 }
+                context["requesting_user_instructions"] = [
+                    item["text"]
+                    for item in await self.db(self.instructions.delivered, self.call_id)
+                ]
                 result = await self.runner(context, [ask_user, send_dtmf, end_call])
-                if await valid():
-                    if end_request:
-                        await self.bridge.end_call(*end_request, spoken_result=result[:4000])
-                    elif result and not getattr(self.bridge, "ending", None):
-                        await self.bridge.deliver_result(result[:6000], did)
-                    await self.db(self.store.finish, self.call_id, did, revision, "applied")
+                async with self.control_lock:
+                    if await valid():
+                        if end_request:
+                            await self.bridge.end_call(*end_request, spoken_result=result[:4000])
+                        elif result and not getattr(self.bridge, "ending", None):
+                            await self.bridge.deliver_result(result[:6000], did)
+                        await self.db(self.store.finish, self.call_id, did, revision, "applied")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             await self.db(
                 self.store.event, self.call_id, "delegation_failed", {"type": type(exc).__name__}
             )
-            if await valid():
-                try:
-                    await self.bridge.command(
-                        "session.thinking.append",
-                        "요청을 확인하지 못했습니다. 확인된 결과로 말하지 말고 "
-                        "짧게 확인 불가를 안내하세요.",
-                        did,
-                    )
-                finally:
-                    await self.db(self.store.finish, self.call_id, did, revision, "failed")
+            async with self.control_lock:
+                if await valid():
+                    try:
+                        await self.bridge.command(
+                            "session.thinking.append",
+                            "요청을 확인하지 못했습니다. 확인된 결과로 말하지 말고 "
+                            "짧게 확인 불가를 안내하세요.",
+                            did,
+                        )
+                    finally:
+                        await self.db(self.store.finish, self.call_id, did, revision, "failed")
 
     async def close(self):
         self.closed = True
-        if self.task:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)
+        tasks = [t for t in [self.task, self.instruction_task, *self.requests, *self.retired] if t]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await self.db(self.instructions.abort, self.call_id, "call_ended")
         await self.db(self.store.cancel, self.call_id)

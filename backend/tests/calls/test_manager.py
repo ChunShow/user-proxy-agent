@@ -416,3 +416,52 @@ async def test_live_completion_retains_model_summary_without_claiming_success(tm
     result = s.get(o, a["id"])
     assert result["outcome"] == "incomplete"
     assert result["reported_summary"] == "합성 답변 전달 보고"
+
+
+async def test_update_requires_live_session_and_keeps_delivery_owned_by_call(tmp_path):
+    from types import SimpleNamespace
+
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    m, g, db, s, o, c, u = manager(tmp_path)
+    a = s.register(o, c, u, spec())
+    s.update(a["id"], status="connected")
+    uid = add_user(db, o, c, "가격도 확인해줘")["user_message_id"]
+    with pytest.raises(StoreError, match="call_instruction_unavailable"):
+        await m.update(o, c, uid, a["id"], "가격 확인")
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def command(*args):
+        entered.set()
+        await gate.wait()
+
+    co = DelegationCoordinator(s, a["id"], SimpleNamespace(ending=None, command=command))
+    m.live_sessions[a["id"]] = co
+    with pytest.raises(StoreError, match="not_found"):
+        await m.update("other", c, uid, a["id"], "가격 확인")
+    result = await asyncio.wait_for(m.update(o, c, uid, a["id"], "가격 확인"), 0.5)
+    await entered.wait()
+    assert result["status"] == "pending"
+    s.request_stop(o, a["id"])
+    await co.close()
+    assert (await m.update(o, c, uid, a["id"], "가격 확인"))["status"] == "delivery_unknown"
+    assert g.dials == 0
+
+
+async def test_restart_marks_pending_instructions_without_sending_them(tmp_path):
+    from types import SimpleNamespace
+
+    from agent_service.calls.instructions import InstructionStore
+
+    m, g, db, s, o, c, u = manager(tmp_path)
+    a = s.register(o, c, u, spec())
+    s.update(a["id"], status="connected")
+    ctx = SimpleNamespace(owner=o, conversation_id=c, source_user_message_id=u)
+    store = InstructionStore(s)
+    i = store.submit(ctx, a["id"], "새 조건")
+    store.transition(a["id"], i["id"], "pending", "sending")
+    await m.recover()
+    await m.wait_idle()
+    assert s.get(o, a["id"])["instructions"][0]["status"] == "delivery_unknown"
+    assert g.dials == 0

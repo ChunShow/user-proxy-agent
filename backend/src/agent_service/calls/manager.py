@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import httpx
 from starlette.concurrency import run_in_threadpool
@@ -13,6 +14,7 @@ from agent_service.calls.bridge import NativeAudioBridge
 from agent_service.calls.carrier import ClawOpsControl
 from agent_service.calls.connection import AgentConnection
 from agent_service.calls.delegation import DelegationCoordinator
+from agent_service.calls.instructions import InstructionStore
 from agent_service.calls.live import LiveAudioSession
 from agent_service.calls.live_bridge import LiveBridge
 from agent_service.calls.live_store import LiveStore
@@ -116,6 +118,7 @@ class CallManager:
         self.tasks, self.signals, self.locks = {}, {}, {}
         self.submissions = set()
         self.reports = {}
+        self.live_sessions = {}
         self.recoveries = set()
         self.closing = False
 
@@ -140,6 +143,23 @@ class CallManager:
                 done.exception()
 
         task.add_done_callback(finished)
+
+    async def update(self, owner, conversation_id, source_user_message_id, call_id, instruction):
+        context = SimpleNamespace(
+            owner=owner,
+            conversation_id=conversation_id,
+            source_user_message_id=source_user_message_id,
+        )
+        return await self._owned(self._update_instruction(context, call_id, instruction))
+
+    async def _update_instruction(self, context, call_id, instruction):
+        prior = await self.db(InstructionStore(self.store).prior, context, call_id, instruction)
+        if prior:
+            return prior
+        coordinator = self.live_sessions.get(call_id)
+        if self.closing or coordinator is None:
+            raise StoreError("call_instruction_unavailable")
+        return await coordinator.submit(context, instruction)
 
     async def start(self, owner, conversation_id, source_user_message_id, spec):
         if self.closing:
@@ -207,9 +227,11 @@ class CallManager:
             bridge = gateway.bridge(model, spec)
             if isinstance(bridge, LiveBridge):
                 bridge.coordinator = DelegationCoordinator(self.store, call_id, bridge)
+                self.live_sessions[call_id] = bridge.coordinator
             try:
                 return await bridge.run(media)
             finally:
+                self.live_sessions.pop(call_id, None)
                 if isinstance(bridge, (NativeAudioBridge, LiveBridge)):
                     self.reports[call_id] = bridge.report()
                 # Best effort clear before closing the media socket on direct stop/timeout.
@@ -317,6 +339,7 @@ class CallManager:
                         self.reports.pop(call_id, None)
 
     async def _finish(self, gateway, call_id, external_id, report=None):
+        await self.db(InstructionStore(self.store).abort, call_id, "call_ended")
         lock = self.locks.setdefault(call_id, asyncio.Lock())
         async with lock:
             row = await self.db(self.store.record, call_id)
@@ -441,6 +464,7 @@ class CallManager:
             )
 
     async def recover(self):
+        await self.db(InstructionStore(self.store).recover)
         for row in await self.db(self.store.active, raw=True):
             self._spawn(row["id"], self._recover_one(row["id"]), recovery=True)
 

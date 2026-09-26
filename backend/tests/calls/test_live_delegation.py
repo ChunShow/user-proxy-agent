@@ -6,6 +6,53 @@ from test_native_audio import until
 
 
 @pytest.mark.asyncio
+async def test_new_conditions_reject_old_tools_and_discard_old_end_request(tmp_path):
+    from test_call_instructions import setup_instructions
+
+    from agent_service.calls.delegation import DelegationCoordinator
+    from agent_service.storage import StoreError
+
+    _, calls, _, _, ctx, call = setup_instructions(tmp_path)
+    ready = asyncio.Event()
+    rejected = []
+
+    class Bridge:
+        transcripts = [{"role": "caller", "text": "문의"}]
+        ending = None
+
+        async def command(self, *args):
+            pass
+
+        async def end_call(self, *args, **kwargs):
+            pytest.fail("old end request applied")
+
+        async def send_dtmf(self, *args):
+            pytest.fail("old DTMF applied")
+
+    async def run(context, tools):
+        by_name = {t.name: t for t in tools}
+        end = {"reason": "goal_achieved", "summary": "이전 조건 완료"}
+        await by_name["end_call"].ainvoke(end)
+        ready.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            for name, args in [("end_call", end), ("send_dtmf", {"digit": "4"})]:
+                with pytest.raises(StoreError):
+                    await by_name[name].ainvoke(args)
+                rejected.append(name)
+            return "오래된 완료 안내"
+
+    coordinator = DelegationCoordinator(calls, call, Bridge(), runner=run)
+    await coordinator.request("old")
+    await ready.wait()
+    await coordinator.submit(ctx, "가격도 추가로 확인")
+    await until(lambda: len(rejected) == 2)
+    await until(lambda: calls.get(ctx.owner, call)["instructions"][0]["status"] == "delivered")
+    await coordinator.close()
+
+
+@pytest.mark.asyncio
 async def test_voice_delegation_waits_for_user_then_returns_verified_answer(tmp_path):
     from agent_service.calls.delegation import DelegationCoordinator
 
@@ -106,4 +153,159 @@ async def test_end_request_includes_backend_answer_before_farewell(tmp_path):
     await coordinator.request("d1")
     await until(lambda: bool(sent))
     assert sent == [("goal_achieved", "4시 확인", "오후 4시로 확인했습니다.")]
+    await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_instruction_ack_is_independent_and_next_delegation_keeps_conditions(tmp_path):
+    import json
+
+    from test_call_instructions import setup_instructions
+    from test_native_audio import Socket
+
+    from agent_service.calls.delegation import DelegationCoordinator
+    from agent_service.calls.live_bridge import LiveBridge
+
+    _, calls, _, store, ctx, call = setup_instructions(tmp_path)
+    model = Socket()
+    bridge = LiveBridge(model)
+    bridge.transcripts = [{"role": "caller", "text": "일정을 확인해주세요"}]
+    contexts = []
+
+    async def run(context, tools):
+        contexts.append(context)
+        return "새 조건을 확인합니다"
+
+    coordinator = DelegationCoordinator(calls, call, bridge, runner=run)
+    bridge.coordinator = coordinator
+    receive = asyncio.create_task(bridge.receive())
+    try:
+        item = await coordinator.submit(ctx, "오후 6시로 변경")
+        await until(lambda: bool(model.sent))
+        assert calls.get(ctx.owner, call)["instructions"][0]["status"] == "sending"
+        # The receive loop must not wait for the lock held by instruction delivery.
+        await model.input.put(
+            {
+                "type": "session.delegation.created",
+                "delegation": {"id": "during-update", "target": "client"},
+            }
+        )
+        cursor = 0
+
+        async def acknowledge_until(predicate):
+            nonlocal cursor
+            async with asyncio.timeout(2):
+                while not predicate():
+                    while cursor < len(model.sent):
+                        event = model.sent[cursor]
+                        cursor += 1
+                        if event["type"].endswith(".append"):
+                            await model.input.put(
+                                {"type": event["type"] + "ed", "client_event_id": event["event_id"]}
+                            )
+                    await asyncio.sleep(0.001)
+
+        await acknowledge_until(lambda: bool(contexts))
+        assert store.delivered(call)[0]["id"] == item["id"]
+        assert contexts[0]["requesting_user_instructions"] == ["오후 6시로 변경"]
+        assert any("오후 6시" in json.dumps(e, ensure_ascii=False) for e in model.sent)
+        assert (await coordinator.submit(ctx, "오후 6시로 변경"))["id"] == item["id"]
+        await acknowledge_until(lambda: coordinator.task.done())
+    finally:
+        receive.cancel()
+        await asyncio.gather(receive, return_exceptions=True)
+        await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_new_instruction_cancels_old_question_and_old_runner_output(tmp_path):
+    from test_call_instructions import setup_instructions
+
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, live, _, ctx, call = setup_instructions(tmp_path)
+    output = []
+
+    class Bridge:
+        transcripts = [{"role": "caller", "text": "3시 가능?"}]
+        ending = None
+
+        async def command(self, *args):
+            output.append(args)
+
+        async def deliver_result(self, *args):
+            output.append(("OLD_RESULT", *args))
+
+    async def run(context, tools):
+        try:
+            await next(t for t in tools if t.name == "ask_user").ainvoke(
+                {"question": "3시?", "options": []}
+            )
+        except asyncio.CancelledError:
+            return "취소를 무시한 오래된 결과"
+        return "이전 조건 결과"
+
+    coordinator = DelegationCoordinator(calls, call, Bridge(), runner=run)
+    await coordinator.request("old")
+    await until(lambda: bool(live.activity(ctx.owner, call)["questions"]))
+    await coordinator.submit(ctx, "6시로 변경")
+    await until(lambda: calls.get(ctx.owner, call)["instructions"][0]["status"] == "delivered")
+    assert live.activity(ctx.owner, call)["questions"][0]["status"] == "canceled"
+    assert not any(e[0] == "OLD_RESULT" for e in output)
+    await coordinator.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("close", [True, False])
+async def test_instruction_missing_ack_is_unknown_and_never_replayed(tmp_path, close):
+    from test_call_instructions import setup_instructions
+
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, live, _, ctx, call = setup_instructions(tmp_path)
+    sent = []
+    gate = asyncio.Event()
+
+    class Bridge:
+        ending = None
+        transcripts = [{"role": "caller", "text": "문의"}]
+
+        async def command(self, *args):
+            sent.append(args)
+            await gate.wait()
+            raise TimeoutError
+
+    coordinator = DelegationCoordinator(calls, call, Bridge())
+    item = await coordinator.submit(ctx, "새 조건")
+    await until(lambda: bool(sent))
+    if close:
+        calls.request_stop(ctx.owner, call)
+        await coordinator.close()
+    else:
+        gate.set()
+    await until(
+        lambda: calls.get(ctx.owner, call)["instructions"][0]["status"] == "delivery_unknown"
+    )
+    assert live.begin(call, "no_old_conditions") is None
+    assert (await coordinator.submit(ctx, "새 조건"))["id"] == item["id"]
+    assert len(sent) == 1
+    await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_instruction_rejected_when_farewell_is_pending(tmp_path):
+    from test_call_instructions import setup_instructions
+
+    from agent_service.calls.delegation import DelegationCoordinator
+    from agent_service.storage import StoreError
+
+    _, calls, _, _, ctx, call = setup_instructions(tmp_path)
+
+    class Bridge:
+        ending = {"status": "waiting_for_playback"}
+
+    coordinator = DelegationCoordinator(calls, call, Bridge())
+    with pytest.raises(StoreError, match="call_instruction_inactive"):
+        await coordinator.submit(ctx, "새 조건")
+    assert calls.get(ctx.owner, call)["instructions"] == []
     await coordinator.close()
