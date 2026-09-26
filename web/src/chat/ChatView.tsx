@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import ConnectionStatus from '../components/ConnectionStatus'
+import ConnectedApps from '../integrations/ConnectedApps'
 import Icon from '../components/Icon'
 import ConversationList from './ConversationList'
 import type { Conversation } from './conversations'
@@ -92,7 +93,7 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
           <button ref={menuButton} className="mobile-menu-button" aria-label="메뉴 열기" aria-expanded={menuOpen} onClick={() => { setMenuOpen(true); dialog.current?.showModal() }}><Icon name="menu" /></button>
           <h1>user proxy agent</h1>
         </div>
-        <ConnectionStatus />
+        <div className="header-tools"><ConnectedApps /><ConnectionStatus /></div>
       </header>
       {activeCall}
       <div className={`chat-workspace ${isEmpty ? 'is-start' : ''}`}>

@@ -17,6 +17,9 @@ from agent_service.calls.routes import router as calls_router
 from agent_service.calls.store import CallStore
 from agent_service.chat.routes import router
 from agent_service.conversations import router as conversations_router
+from agent_service.integrations.google import GoogleManager
+from agent_service.integrations.logging import install_access_filter
+from agent_service.integrations.routes import router as integrations_router
 from agent_service.session import router as session_router
 from agent_service.storage import ConversationStore, StoreError
 
@@ -27,9 +30,15 @@ class HealthResponse(BaseModel):
 
 
 def create_app(*, database_path: Path | None = None) -> FastAPI:
+    install_access_filter()
     store = ConversationStore(
-        database_path or Path(os.environ.get("AGENT_SERVICE_DATABASE_PATH",
-            str(Path(__file__).resolve().parents[3] / "data/agent-service.sqlite3")))
+        database_path
+        or Path(
+            os.environ.get(
+                "AGENT_SERVICE_DATABASE_PATH",
+                str(Path(__file__).resolve().parents[3] / "data/agent-service.sqlite3"),
+            )
+        )
     )
 
     @asynccontextmanager
@@ -44,6 +53,9 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="user proxy agent", version="0.1.0", lifespan=lifespan)
     app.state.store = store
     app.state.calls = CallManager(CallStore(store))
+    app.state.integrations = GoogleManager(store)
+    app.state.calls.integrations = app.state.integrations
+    app.include_router(integrations_router)
     app.include_router(calls_router)
     app.include_router(session_router)
     app.include_router(conversations_router)

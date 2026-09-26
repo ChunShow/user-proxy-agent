@@ -1,0 +1,24 @@
+.apps-trigger { border: 0; background: transparent; color: var(--muted); font-size: 13px; min-height: 44px; padding: 8px 12px; }
+.header-tools { display: flex; align-items: center; gap: 8px; }
+.apps-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; border: 1px solid var(--line); border-radius: 14px; padding: 28px; color: var(--ink); background: var(--surface); }
+.apps-dialog::backdrop { background: rgb(0 0 0 / 24%); }
+.apps-dialog header, .apps-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.apps-dialog h2 { font-size: 20px; font-weight: 600; margin: 0; }
+.apps-dialog h3 { font-size: 17px; margin: 0; font-weight: 600; }
+.apps-dialog p { line-height: 1.7; font-size: 14px; overflow-wrap: anywhere; }
+.apps-dialog .apps-close { border: 0; padding: 8px; min-height: 44px; background: transparent; color: var(--muted); font-size: 13px; }
+.apps-intro { color: var(--muted); margin: 8px 0 28px; }
+.apps-account { border-top: 1px solid var(--line); padding-top: 24px; }
+.apps-heading span { color: var(--muted); font-size: 12px; }
+.apps-email { margin: 8px 0 18px; }
+.apps-dialog .apps-muted { font-size: 12px; color: var(--muted); }
+.apps-permissions { padding-left: 20px; font-size: 13px; line-height: 1.9; }
+.apps-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.apps-actions button { min-height: 44px; border: 1px solid var(--line); border-radius: 7px; padding: 10px 14px; background: var(--surface); font-size: 13px; }
+.apps-actions .apps-primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.apps-setup { margin-top: 20px; font-size: 13px; }
+.apps-setup summary { cursor: pointer; padding: 10px 0; }
+.apps-setup code { font-size: 12px; overflow-wrap: anywhere; }
+.apps-uri { display: block; padding: 12px; background: var(--canvas); border-radius: 6px; }
+.apps-error { color: var(--error); }
+@media (max-width: 560px) { .apps-dialog { padding: 22px; } .header-tools { gap: 0; } .apps-trigger { padding: 8px; } }
