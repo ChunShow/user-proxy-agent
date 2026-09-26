@@ -29,6 +29,14 @@ Live 모드에서는 음성 생성·위임까지 시험하지 않으므로 `audi
 
 [6단계 구현 기록](superpowers/plans/2026-09-26-step-06-live-delegation.md).
 
+후속 실통화에서 웹 질문·답변 접수와 Live의 답변/인사 음성 생성을 확인했다.
+사용자도 실제 전화에서 답변과 마지막 인사까지 들렸다고 확인했다.
+직접 종료 요청으로 마쳤으므로 실회선 자동 종료 완료 검증은 남아 있다.
+새 통화의 `no_answer`, `busy`, `failed`, `canceled`는 대응하는 `call_*` 원인으로
+저장·표시하며, 정상 연결 뒤 음성 오류는 `call_audio_failed`로 유지한다.
+전화 요청 뒤의 별도 부정 조건을 발신 금지로 오인하던 검사도 수정했다.
+[후속 수정·검증 기록](superpowers/plans/2026-09-26-step-06-call-validation.md).
+
 ---
 
 아래는 기존 Realtime 경로와 5단계 검증 기록이다.
