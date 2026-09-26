@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 import httpx
 from starlette.concurrency import run_in_threadpool
 
-from agent_service.integrations.settings import EMAIL, READ_SCOPES, GoogleSettings
+from agent_service.integrations.settings import EMAIL, READ_SCOPES, WRITE_SCOPES, GoogleSettings
 from agent_service.integrations.store import IntegrationStore
 from agent_service.storage import StoreError
 
@@ -53,11 +53,12 @@ class GoogleManager:
         except httpx.HTTPError:
             raise StoreError("integration_unavailable") from None
 
-    async def connect(self, owner):
+    async def connect(self, owner, *, allow_write=False):
         if owner in self.revoking:
             raise StoreError("integration_busy")
         settings = self.settings_loader()
-        state, cookie, verifier = await self.db(self.store.begin, owner, READ_SCOPES)
+        scopes = WRITE_SCOPES if allow_write else READ_SCOPES
+        state, cookie, verifier = await self.db(self.store.begin, owner, scopes)
         if owner in self.revoking:
             raise StoreError("integration_busy")
         challenge = (
@@ -70,7 +71,7 @@ class GoogleManager:
                 "client_id": settings.client_id,
                 "redirect_uri": settings.redirect_uri,
                 "response_type": "code",
-                "scope": " ".join(READ_SCOPES),
+                "scope": " ".join(scopes),
                 "state": state,
                 "access_type": "offline",
                 "prompt": "consent",

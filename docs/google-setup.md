@@ -18,7 +18,7 @@
 6. 채팅에서 “오늘 일정 확인해줘”, “이번 주 회의 관련 메일을 찾아줘”처럼 요청한다.
    일정 조회는 기본 캘린더를 기준으로 한다. 다른 캘린더는 이름을 지정한다.
 
-앱은 현재 일정·캘린더 목록 조회와 메일 읽기 권한을 요청한다. 이벤트 참석 여부나 빈 시간 조회 결과는
+첫 연결은 일정·캘린더 목록 조회와 메일 읽기 권한만 요청한다. 이벤트 참석 여부나 빈 시간 조회 결과는
 일정 등록·초대·메일 발송의 승인을 뜻하지 않는다. 메일/일정 본문은 응답 생성에 필요한 경우 설정된
 AI 모델에 전달되므로 그 점을 고려해 연결한다. 첨부 파일은 읽지 않는다.
 
@@ -38,3 +38,16 @@ AI 모델에 전달되므로 그 점을 고려해 연결한다. 첨부 파일은
 공식 문서: [OAuth 웹 서버 흐름](https://developers.google.com/identity/protocols/oauth2/web-server),
 [Calendar 권한](https://developers.google.com/workspace/calendar/api/auth),
 [Gmail 메일 목록](https://developers.google.com/workspace/gmail/api/guides/list-messages).
+
+## 일정 등록·메일 발송
+
+앱 연결에서 **일정 등록·메일 발송 허용**을 누르고 추가 Google 권한에 직접 동의한다.
+채팅에서 요청하면 실행안이 대화 아래 카드로 표시된다. 대상 계정, 시간 또는 수신자·본문을 확인하고
+**확인하고 등록/발송**을 눌러야 실행한다. 모델은 제안만 할 수 있고 확인 버튼을 대신 누를 수 없다.
+기본 캘린더의 단일 일정, 최대 5명에게 일반 텍스트 메일을 지원한다. 참석자 초대·반복 일정·기존 일정
+수정/삭제·첨부 파일은 아직 지원하지 않는다. 실행안은 30분 뒤 만료되고 수정은 취소 후 새 요청으로 한다.
+
+결과를 확인하지 못했거나 실행 중 서버가 재시작되면 **실행 여부 확인 필요**로 표시하며 재전송하지 않는다.
+Google에서 실제 등록/발송 여부를 먼저 확인한다. 이 기능은 모사 Google API로 검증했으며 실제 쓰기는 미검증이다.
+공식 문서: [Calendar 등록](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert),
+[Gmail 발송](https://developers.google.com/workspace/gmail/api/guides/sending).

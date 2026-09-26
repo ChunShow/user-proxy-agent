@@ -9,5 +9,5 @@ export interface GoogleConnection {
   gmail_send?: boolean
 }
 export const getGoogle = (signal?: AbortSignal) => request<GoogleConnection>('/api/integrations/google', undefined, signal)
-export const connectGoogle = () => request<{ url: string }>('/api/integrations/google/connect', {})
+export const connectGoogle = (allowWrite = false) => request<{ url: string }>('/api/integrations/google/connect', { allow_write: allowWrite })
 export const disconnectGoogle = () => request<{ status: string; revoked: boolean }>('/api/integrations/google/disconnect', {})

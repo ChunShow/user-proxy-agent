@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import ConnectionStatus from '../components/ConnectionStatus'
+import ActionCards from '../actions/ActionCards'
 import ConnectedApps from '../integrations/ConnectedApps'
 import Icon from '../components/Icon'
 import ConversationList from './ConversationList'
@@ -123,6 +124,7 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
             {callError}
             {children}
             <MessageList messages={messages} onRetry={onRetry} afterMessage={afterMessage} />
+            {!preview && conversationId && !loading && !loadError && <ActionCards key={conversationId} conversationId={conversationId} />}
             <div ref={bottom} />
           </div>
         </div>

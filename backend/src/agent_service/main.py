@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from agent_service.actions.manager import ActionManager
+from agent_service.actions.routes import router as actions_router
 from agent_service.calls.manager import CallManager
 from agent_service.calls.routes import router as calls_router
 from agent_service.calls.store import CallStore
@@ -44,10 +46,12 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         await run_in_threadpool(store.initialize)
+        await run_in_threadpool(app.state.actions.store.recover)
         await app.state.calls.recover()
         try:
             yield
         finally:
+            await app.state.actions.shutdown()
             await app.state.calls.shutdown()
 
     app = FastAPI(title="user proxy agent", version="0.1.0", lifespan=lifespan)
@@ -55,6 +59,9 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     app.state.calls = CallManager(CallStore(store))
     app.state.integrations = GoogleManager(store)
     app.state.calls.integrations = app.state.integrations
+    app.state.actions = ActionManager(store, app.state.integrations)
+    app.state.calls.actions = app.state.actions
+    app.include_router(actions_router)
     app.include_router(integrations_router)
     app.include_router(calls_router)
     app.include_router(session_router)

@@ -89,6 +89,9 @@ class ConversationStore:
             from agent_service.integrations.store import migrate as migrate_integrations
 
             migrate_integrations(db)
+            from agent_service.actions.store import migrate as migrate_actions
+
+            migrate_actions(db)
             db.execute("UPDATE messages SET status='interrupted' WHERE status='streaming'")
             db.execute("UPDATE runs SET status='interrupted' WHERE status='streaming'")
 

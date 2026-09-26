@@ -35,10 +35,10 @@ export default function ConnectedApps() {
     }
     return () => controller.abort()
   }, [open, attempt])
-  async function connect() {
+  async function connect(allowWrite = false) {
     setBusy(true); setError('')
     try {
-      const { url } = await connectGoogle()
+      const { url } = await connectGoogle(allowWrite)
       const destination = new URL(url)
       if (destination.origin !== 'https://accounts.google.com' || destination.pathname !== '/o/oauth2/v2/auth') throw new Error('unexpected destination')
       if (dialog.current?.open) location.assign(destination.href)
@@ -63,10 +63,11 @@ export default function ConnectedApps() {
         <div className="apps-heading"><h3>Google</h3><span role="status">{state ? labels[state.status] : '확인 중'}</span></div>
         {state?.email && <p className="apps-email">{state.email}</p>}
         <p>Google Calendar에서 일정을 확인하고 Gmail에서 메일을 찾아 읽습니다.</p>
-        <p className="apps-muted">메일 발송과 일정 변경 권한은 요청하지 않습니다. 조회한 내용은 답변을 위해 설정된 AI 모델에 전달됩니다.</p>
+        <p className="apps-muted">처음에는 조회 권한만 요청합니다. 등록·발송은 별도로 허용하고, 매번 내용을 확인한 뒤 실행합니다. 조회한 내용은 답변을 위해 설정된 AI 모델에 전달됩니다.</p>
         {state?.status === 'connected' && <ul className="apps-permissions">
           <li>{state.calendar_read ? 'Calendar 조회 가능' : 'Calendar 권한이 필요해요'}</li>
           <li>{state.gmail_read ? 'Gmail 조회 가능' : 'Gmail 권한이 필요해요'}</li>
+          <li>{state.calendar_write && state.gmail_send ? '일정 등록·메일 발송 가능 (실행 전 확인)' : '등록·발송은 추가 동의가 필요해요'}</li>
         </ul>}
         {state?.status === 'not_configured' && <details className="apps-setup"><summary>설정 방법 보기</summary>
           <p>서버의 <code>.env</code>에 <code>GOOGLE_CLIENT_ID</code>와 <code>GOOGLE_CLIENT_SECRET</code>을 등록해 주세요. Google Cloud에서 Calendar와 Gmail API를 켜고 웹 앱 OAuth 클라이언트를 만듭니다.</p>
@@ -76,6 +77,7 @@ export default function ConnectedApps() {
         <div className="apps-actions">
           {state?.status !== 'connected' && <button className="apps-primary" disabled={busy || !state || state.status === 'not_configured'} onClick={() => void connect()}>Google 계정 연결</button>}
           {state?.status === 'connected' && (!state.calendar_read || !state.gmail_read) && <button disabled={busy} onClick={() => void connect()}>권한 다시 확인</button>}
+          {state?.status === 'connected' && (!state.calendar_write || !state.gmail_send) && <button disabled={busy} onClick={() => void connect(true)}>일정 등록·메일 발송 허용</button>}
           {state && ['connected', 'reconnect_required'].includes(state.status) && <button disabled={busy} onClick={() => void disconnect()}>연결 해제</button>}
           {error && <button disabled={busy} onClick={() => setAttempt(n => n + 1)}>다시 확인</button>}
         </div>

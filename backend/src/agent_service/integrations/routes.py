@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel, ConfigDict
 
 from agent_service.session import check_mutation, require_owner
 from agent_service.storage import StoreError
@@ -9,6 +10,11 @@ COOKIE = "proxy_google_oauth"
 HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 
+class ConnectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    allow_write: bool = False
+
+
 @router.get("")
 async def status(request: Request):
     owner = await require_owner(request)
@@ -16,10 +22,10 @@ async def status(request: Request):
 
 
 @router.post("/connect")
-async def connect(request: Request):
+async def connect(request: Request, body: ConnectBody):
     check_mutation(request)
     owner = await require_owner(request)
-    url, cookie = await request.app.state.integrations.connect(owner)
+    url, cookie = await request.app.state.integrations.connect(owner, allow_write=body.allow_write)
     response = JSONResponse({"url": url}, headers=HEADERS)
     response.set_cookie(
         COOKIE,

@@ -265,3 +265,23 @@ async def test_reconnect_waits_until_old_remote_revocation_finishes(tmp_path):
     finally:
         release.set()
         await task
+
+
+def test_write_scopes_require_explicit_connect_request(tmp_path):
+    from agent_service.integrations.settings import CALENDAR_WRITE, GMAIL_SEND
+
+    app, requests = configured(tmp_path)
+    with TestClient(app) as client:
+        client.post("/api/session", json={})
+        read = client.post("/api/integrations/google/connect", json={}).json()["url"]
+        write = client.post("/api/integrations/google/connect", json={"allow_write": True}).json()[
+            "url"
+        ]
+        assert GMAIL_SEND not in parse_qs(urlsplit(read).query)["scope"][0]
+        assert GMAIL_SEND in parse_qs(urlsplit(write).query)["scope"][0]
+        assert CALENDAR_WRITE in parse_qs(urlsplit(write).query)["scope"][0]
+        assert (
+            client.post("/api/integrations/google/connect", json={"allow_write": "yes"}).status_code
+            == 422
+        )
+        assert not requests

@@ -1,0 +1,13 @@
+.action-requests:empty { display: none; }
+.action-card { border: 1px solid var(--line); border-radius: 12px; padding: 22px; margin: 20px 0; background: var(--surface); overflow-wrap: anywhere; }
+.action-card header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.action-card h3 { font-size: 15px; font-weight: 600; margin: 0; }
+.action-card header span, .action-account, .action-note { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.action-card dl { font-size: 14px; line-height: 1.7; margin: 20px 0; }
+.action-card dt { font-size: 12px; color: var(--muted); margin-top: 14px; }
+.action-card dd { margin: 3px 0 0; }
+.action-body { white-space: pre-wrap; max-height: 300px; overflow: auto; }
+.action-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.action-buttons button { min-height: 44px; padding: 10px 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: 13px; }
+.action-buttons .action-confirm { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.action-error { color: var(--error); font-size: 13px; }
