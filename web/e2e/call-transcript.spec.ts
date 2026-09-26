@@ -112,6 +112,8 @@ test('new text respects reading position on mobile while stop stays available', 
   f.events.push(transcript(31, '새로 도착한 마지막 문장'))
   await expect(page.getByRole('button', { name: '새 내용 보기' })).toBeVisible()
   expect(await region.evaluate(el => el.scrollTop)).toBe(0)
+  await region.evaluate(el => { el.scrollTop = 20; el.dispatchEvent(new Event('scroll')) })
+  await expect(page.getByRole('button', { name: '새 내용 보기' })).toBeVisible()
   await page.getByRole('button', { name: '새 내용 보기' }).click()
   await expect(region.getByText('새로 도착한 마지막 문장')).toBeInViewport()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)

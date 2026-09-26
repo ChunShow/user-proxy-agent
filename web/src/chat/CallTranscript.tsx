@@ -32,8 +32,12 @@ export default function CallTranscript({ callId, active }: { callId: string; act
         onScroll={() => {
           const el = scroll.current
           if (!el) return
-          following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-          setRead({ following: following.current, revision })
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+          following.current = atBottom
+          setRead(previous => ({
+            following: atBottom,
+            revision: atBottom || previous.following ? revision : previous.revision,
+          }))
         }}>
         {rows.length ? <ol>{rows.map(row => <li key={row.id} className={`call-transcript-row speaker-${row.role}`}>
           <span className="call-transcript-speaker">{row.role === 'caller' ? '상대방' : '도우미'}</span>
