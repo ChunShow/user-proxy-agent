@@ -226,7 +226,9 @@ class CallManager:
             await self.db(self.store.update, call_id, status="connected")
             bridge = gateway.bridge(model, spec)
             if isinstance(bridge, LiveBridge):
-                bridge.coordinator = DelegationCoordinator(self.store, call_id, bridge)
+                bridge.coordinator = DelegationCoordinator(
+                    self.store, call_id, bridge, integrations=getattr(self, "integrations", None)
+                )
                 self.live_sessions[call_id] = bridge.coordinator
             try:
                 return await bridge.run(media)

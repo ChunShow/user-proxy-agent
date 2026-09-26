@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from agent_service.calls.instructions import InstructionStore
 from agent_service.calls.live_store import LiveStore
+from agent_service.integrations.tools import build_delegation_app_tools
 from agent_service.settings import load_settings
 from agent_service.storage import StoreError
 
@@ -23,7 +24,9 @@ PROMPT = (
     "뒤의 조건이 앞의 조건보다 최신입니다. "
     "원래 업무나 이전 답변과 충돌하면 최신 요청자 조건을 우선하세요. "
     "사용자의 기존 조건만으로 명확하지 않은 일정·결정은 반드시 ask_user로 확인하세요. "
-    "캘린더 연결은 없으므로 조회했다고 말하지 마세요. 사용자 무응답은 동의가 아닙니다. "
+    "일정 확인 도구가 있으면 원래 요청 범위의 시간만 조회하세요. "
+    "연결/권한이 없거나 오류·잘린 결과이면 ask_user로 요청자에게 확인하세요. "
+    "일정이 비었다고 예약에 동의한 것은 아닙니다. 사용자 무응답은 동의가 아닙니다. "
     "날짜·시간·시간대가 불명확하면 구체화하고 확인되지 않은 예약을 약속하지 마세요. "
     "기본 시간대는 제공된 timezone입니다. 이미 주어진 날짜/시간대를 반복해서 묻지 마세요. "
     "ARS 안내가 있으면 해당 숫자를 send_dtmf로 한 번 보내고 다음 안내를 기다립니다. "
@@ -76,7 +79,7 @@ async def run_delegation(context, tools):
 
 
 class DelegationCoordinator:
-    def __init__(self, calls, call_id, bridge, *, runner=run_delegation):
+    def __init__(self, calls, call_id, bridge, *, runner=run_delegation, integrations=None):
         self.calls, self.call_id, self.bridge = calls, call_id, bridge
         self.store, self.runner = LiveStore(calls), runner
         self.task = None
@@ -87,6 +90,7 @@ class DelegationCoordinator:
         self.retired = set()
         self.instruction_task = None
         self.instructions = InstructionStore(calls)
+        self.integrations = integrations
 
     async def db(self, method, *args):
         return await run_in_threadpool(method, *args)
@@ -281,7 +285,10 @@ class DelegationCoordinator:
                     item["text"]
                     for item in await self.db(self.instructions.delivered, self.call_id)
                 ]
-                result = await self.runner(context, [ask_user, send_dtmf, end_call])
+                tools = [ask_user, send_dtmf, end_call]
+                if self.integrations:
+                    tools += build_delegation_app_tools(self.integrations, row["owner_id"], valid)
+                result = await self.runner(context, tools)
                 async with self.control_lock:
                     if await valid():
                         if end_request:

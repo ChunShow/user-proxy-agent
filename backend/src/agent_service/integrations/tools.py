@@ -58,3 +58,36 @@ def build_integration_tools(manager, owner, *, valid=None):
         return await guarded(queries.read_mail, message_id)
 
     return [get_connected_apps, list_calendars, list_calendar_events, search_email, read_email]
+
+
+def build_delegation_app_tools(manager, owner, valid):
+    @tool
+    async def check_calendar_availability(start: str, end: str) -> dict:
+        """요청자의 기본 캘린더에서 시간대 있는 ISO8601 구간의 바쁜 시간만 확인한다.
+
+        원래 통화 업무에 필요한 범위만 조회한다. 일정 제목/본문은 공개하지 않는다.
+        available은 조회 범위의 일정 부재이며 요청자 동의나 예약 확정이 아니다.
+        오류/잘린 결과/애매한 조건은 ask_user로 확인한다.
+        """
+        try:
+            if not await valid():
+                raise StoreError("call_question_inactive")
+            result = await GoogleQueries(manager, owner).events(start, end)
+            if not await valid():
+                raise StoreError("call_question_inactive")
+            busy = [
+                {key: item[key] for key in ("start", "end")}
+                for item in result["items"]
+                if item["status"] != "cancelled" and item["transparency"] != "transparent"
+            ]
+            return {
+                "source": "Google Calendar primary",
+                "busy": busy,
+                "truncated": result["truncated"],
+                "available": not busy if not result["truncated"] else None,
+                "reservation_confirmed": False,
+            }
+        except StoreError as error:
+            return {"error": error.code, "confirmed": False, "ask_requesting_user": True}
+
+    return [check_calendar_availability]

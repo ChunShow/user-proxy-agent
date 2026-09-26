@@ -1,6 +1,8 @@
 """DeepAgents boundary: expose text, close provider connections on cancellation."""
 
 from collections.abc import AsyncIterator
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from deepagents import (
@@ -123,7 +125,12 @@ async def stream_reply(
             max_tokens=settings.max_tokens,
             http_async_client=client,
         )
-        stream = stream_agent(build_agent(model, call_tools=call_tools), messages)
+        prompt = (
+            SYSTEM_PROMPT + " 현재 한국 시간: " + datetime.now(ZoneInfo("Asia/Seoul")).isoformat()
+        )
+        stream = stream_agent(
+            build_agent(model, call_tools=call_tools, system_prompt=prompt), messages
+        )
         try:
             async for text in stream:
                 yield text

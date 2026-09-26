@@ -107,3 +107,24 @@ async def test_deepagents_queries_real_scoped_tool_with_mock_provider(tmp_path):
         )
     assert len(requests) == 2
     assert "TOKEN" not in json.dumps(requests)
+
+
+@pytest.mark.asyncio
+async def test_call_calendar_no_connection_or_stale_conditions_requests_user(tmp_path):
+    from agent_service.integrations.tools import build_delegation_app_tools
+
+    g = setup(tmp_path, lambda r: httpx.Response(200, json={"items": []}))
+
+    async def valid():
+        return True
+
+    tool = build_delegation_app_tools(g, "other", valid)[0]
+    args = {"start": "2026-09-27T00:00:00Z", "end": "2026-09-28T00:00:00Z"}
+    result = await tool.ainvoke(args)
+    assert result["ask_requesting_user"] and not result["confirmed"]
+
+    async def stale():
+        return False
+
+    tool = build_delegation_app_tools(g, "owner", stale)[0]
+    assert (await tool.ainvoke(args))["error"] == "call_question_inactive"

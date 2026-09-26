@@ -342,3 +342,70 @@ async def test_canceled_answer_is_not_presented_as_confirmed_in_future_context(t
     await coordinator.close()
     assert contexts[0]["requesting_user_answers"] == []
     assert contexts[0]["requesting_user_instructions"] == ["6시로 변경"]
+
+
+@pytest.mark.asyncio
+async def test_connected_calendar_delegation_shares_only_busy_intervals(tmp_path):
+    import time
+
+    import httpx
+
+    from agent_service.calls.delegation import DelegationCoordinator
+    from agent_service.integrations.google import GoogleManager
+    from agent_service.integrations.settings import READ_SCOPES
+
+    db, calls, live, owner, call = setup_live(tmp_path)
+
+    def provider(request):
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "summary": "CONFIDENTIAL",
+                        "description": "PRIVATE",
+                        "start": {"dateTime": "2026-09-27T14:00:00+09:00"},
+                        "end": {"dateTime": "2026-09-27T15:00:00+09:00"},
+                    },
+                    {
+                        "summary": "FREE",
+                        "transparency": "transparent",
+                        "start": {"date": "2026-09-27"},
+                        "end": {"date": "2026-09-28"},
+                    },
+                ]
+            },
+        )
+
+    google = GoogleManager(db, transport=httpx.MockTransport(provider))
+    google.store.save(
+        owner,
+        0,
+        {"access_token": "fake", "refresh_token": "fake", "expires_at": time.time() + 3600},
+        READ_SCOPES,
+        "person@example.test",
+    )
+    results = []
+    outputs = []
+
+    class Bridge:
+        transcripts = [{"role": "caller", "text": "두 시는 가능한가요?"}]
+
+        async def deliver_result(self, *args):
+            outputs.append(args)
+
+    async def runner(context, tools):
+        assert "read_email" not in {t.name for t in tools}
+        t = next(t for t in tools if t.name == "check_calendar_availability")
+        result = await t.ainvoke(
+            {"start": "2026-09-27T14:00:00+09:00", "end": "2026-09-27T15:00:00+09:00"}
+        )
+        results.append(result)
+        return "해당 시간에 일정이 있습니다."
+
+    coordinator = DelegationCoordinator(calls, call, Bridge(), runner=runner, integrations=google)
+    await coordinator.request("calendar")
+    await until(lambda: bool(outputs))
+    await coordinator.close()
+    assert len(results[0]["busy"]) == 1 and results[0]["available"] is False
+    assert "CONFIDENTIAL" not in str(results) and "PRIVATE" not in str(results)
