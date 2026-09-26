@@ -224,3 +224,6 @@
 .call-transcript-error { margin-top: 8px; font-size: 12px; color: var(--muted); }
 .call-transcript-error p { margin: 8px 0; }
 @media (max-width: 767px) { .call-transcript-scroll { max-height: 240px; padding: 10px; } }
+.call-listening { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 16px 0; }
+.call-listening button { min-height: 44px; border: 1px solid var(--line); border-radius: 7px; padding: 9px 14px; font-size: 13px; background: var(--surface); }
+.call-listening .phone-note { margin: 0; }

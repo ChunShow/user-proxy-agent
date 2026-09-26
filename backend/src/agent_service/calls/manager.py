@@ -15,6 +15,7 @@ from agent_service.calls.carrier import ClawOpsControl
 from agent_service.calls.connection import AgentConnection
 from agent_service.calls.delegation import DelegationCoordinator
 from agent_service.calls.instructions import InstructionStore
+from agent_service.calls.listening import AudioHub, ObservedMedia
 from agent_service.calls.live import LiveAudioSession
 from agent_service.calls.live_bridge import LiveBridge
 from agent_service.calls.live_store import LiveStore
@@ -119,6 +120,7 @@ class CallManager:
         self.submissions = set()
         self.reports = {}
         self.live_sessions = {}
+        self.audio_hubs = {}
         self.recoveries = set()
         self.closing = False
 
@@ -231,8 +233,13 @@ class CallManager:
                 )
                 self.live_sessions[call_id] = bridge.coordinator
             try:
-                return await bridge.run(media)
+                hub = AudioHub()
+                self.audio_hubs[call_id] = hub
+                return await bridge.run(ObservedMedia(media, hub))
             finally:
+                hub = self.audio_hubs.pop(call_id, None)
+                if hub:
+                    hub.close()
                 self.live_sessions.pop(call_id, None)
                 if isinstance(bridge, (NativeAudioBridge, LiveBridge)):
                     self.reports[call_id] = bridge.report()

@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from agent_service.actions.manager import ActionManager
 from agent_service.actions.routes import router as actions_router
+from agent_service.calls.listening import router as listening_router
 from agent_service.calls.manager import CallManager
 from agent_service.calls.routes import router as calls_router
 from agent_service.calls.store import CallStore
@@ -61,6 +62,7 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     app.state.calls.integrations = app.state.integrations
     app.state.actions = ActionManager(store, app.state.integrations)
     app.state.calls.actions = app.state.actions
+    app.include_router(listening_router)
     app.include_router(actions_router)
     app.include_router(integrations_router)
     app.include_router(calls_router)

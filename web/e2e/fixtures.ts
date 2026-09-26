@@ -14,6 +14,7 @@ export async function mockConversations(page: Page) {
       if (!conversations.has(id)) conversations.set(id, { id, title: '새 대화', updated_at: new Date().toISOString(), messages: [] })
       return route.fulfill({ status: 201, json: conversations.get(id) })
     }
+    if (url.pathname.endsWith('/actions')) return route.fulfill({ json: { items: [] } })
     if (url.pathname.endsWith('/calls')) return route.fulfill({ json: { items: [], next_cursor: null } })
     const id = url.pathname.split('/')[3]
     if (id) {

@@ -33,6 +33,7 @@ export default function ActionCards({ conversationId }: { conversationId: string
       running = true; clearTimeout(timer)
       try {
         const result = await request<{ items: Proposal[] }>(`/api/conversations/${encodeURIComponent(conversationId)}/actions`, undefined, controller.signal)
+        if (!Array.isArray(result.items)) throw new Error('invalid actions')
         if (current) { setItems(old => merge(old, result.items)); setError('') }
       } catch { if (current) setError('실행 요청을 불러오지 못했어요.') }
       finally { running = false; if (current && !document.hidden) timer = setTimeout(() => void poll(), 2500) }

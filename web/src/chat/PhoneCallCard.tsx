@@ -1,3 +1,4 @@
+import CallListening from './CallListening'
 import Icon from '../components/Icon'
 import CallTranscript from './CallTranscript'
 import { callResult } from './callResult'
@@ -45,6 +46,7 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error,
     <div className="phone-heading"><h2><Icon name="phone" />{call.subject}</h2><span className={`phone-state phone-${call.status}`} role="status">{label}</span></div>
     <p className="phone-destination">{call.destination}</p>
     <p className="phone-purpose">{call.purpose}</p>
+    {call.status === 'connected' && !ending && <CallListening key={call.id} callId={call.id} />}
     <CallTranscript key={call.id} callId={call.id} active={active} />
     {!!call.instructions?.length && <div className="call-instructions" aria-label="통화에 추가한 요청">
       <p className="call-question-caption">통화에 추가한 요청</p>
