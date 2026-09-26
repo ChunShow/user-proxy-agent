@@ -33,7 +33,7 @@ test('real call card restores, allows chat, and ends only after confirmation', a
   const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
   await expect(card.getByText('통화 중', { exact: true })).toBeVisible()
   await expect(card.getByRole('button', { name: '통화 종료', exact: true })).toBeVisible()
-  await expect(card.getByRole('button', { name: '통화 듣기' })).toHaveCount(0)
+  await expect(card.getByRole('button', { name: '통화 듣기' })).toBeVisible()
   const input = page.getByRole('textbox', { name: '메시지' })
   await input.fill('전화하는 동안 질문할게'); await input.press('Enter')
   await expect(page.getByText('테스트 응답입니다.', { exact: true })).toBeVisible()
@@ -153,6 +153,7 @@ test('phone surface desktop and mobile visual evidence', async ({ page }) => {
   await expect(page.getByRole('region', { name: '통화 기능 테스트 통화' })).toBeVisible()
   await page.screenshot({ path: '../docs/verification/step-05-desktop.png' })
   await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('textbox', { name: '메시지' })).toBeInViewport({ ratio: 1 })
   await page.screenshot({ path: '../docs/verification/step-05-mobile.png' })
 })
 

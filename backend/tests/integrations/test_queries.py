@@ -153,3 +153,43 @@ async def test_provider_errors_are_safe(tmp_path, status, code):
     with pytest.raises(StoreError, match=code) as e:
         await q.calendars()
     assert "PRIVATE" not in str(e.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"not json",
+        b"",
+        b"[]",
+        b'{"items":null}',
+        b'{"items":[null]}',
+        b'{"items":[{"start":{},"end":{}}]}',
+        b"{}",
+    ],
+)
+async def test_malformed_calendar_response_cannot_claim_free_time(tmp_path, body):
+    from agent_service.integrations.tools import build_delegation_app_tools
+
+    g = setup(tmp_path, lambda r: httpx.Response(200, content=body))
+
+    async def valid():
+        return True
+
+    result = await build_delegation_app_tools(g, "owner", valid)[0].ainvoke(
+        {"start": "2026-09-27T14:00:00+09:00", "end": "2026-09-27T15:00:00+09:00"}
+    )
+    assert result["confirmed"] is False
+    assert result["ask_requesting_user"] is True
+    assert "available" not in result
+
+
+@pytest.mark.asyncio
+async def test_provider_empty_calendar_envelope_is_a_valid_empty_result(tmp_path):
+    from agent_service.integrations.queries import GoogleQueries
+
+    q = GoogleQueries(
+        setup(tmp_path, lambda r: httpx.Response(200, json={"kind": "calendar#events"})), "owner"
+    )
+    result = await q.events("2026-09-27T14:00:00+09:00", "2026-09-27T15:00:00+09:00")
+    assert result["items"] == [] and not result["truncated"]

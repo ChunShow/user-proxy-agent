@@ -64,6 +64,15 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
     }
     previous.current = { preview, conversationId, userId }
   }, [messages, preview, conversationId])
+  useEffect(() => {
+    const scroll = scroller.current, content = scroll?.firstElementChild
+    if (preview || !scroll || !content) return
+    const observer = new ResizeObserver(() => {
+      if (following.current) scroll.scrollTop = scroll.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [preview])
   function navigate(next: boolean) {
     setShowLatest(false)
     onNavigate(next)

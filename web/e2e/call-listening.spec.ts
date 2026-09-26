@@ -3,6 +3,8 @@ import { mockConversations } from './fixtures'
 const cid = '00000000-0000-4000-8000-000000000701'
 const callId = '00000000-0000-4000-8000-000000000702'
 test('explicit listening plays synthetic audio, releases resources, and leaves call active', async ({ page }) => {
+  const errors: string[] = []
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
   const mock = await mockConversations(page)
   mock.conversations.set(cid, { id: cid, title: '듣기 시험', updated_at: new Date().toISOString(), messages: [{ id: 'user-audio', role: 'user', text: '합성 통화', status: 'completed', retryable: false }] })
   const call = { id: callId, conversation_id: cid, source_user_message_id: 'user-audio', destination: '01000000001', subject: '듣기 시험', purpose: '합성 음성 전달', status: 'connected', outcome: 'pending', reported_summary: '', error_code: null, stop_requested: false, version: 1 }
@@ -37,4 +39,5 @@ test('explicit listening plays synthetic audio, releases resources, and leaves c
   await expect.poll(() => opened).toBe(2)
   await page.getByRole('button', { name: '새 대화', exact: true }).click()
   await expect.poll(() => closed).toBe(2)
+  expect(errors.filter(text => text.includes('same key'))).toEqual([])
 })

@@ -45,9 +45,18 @@ class GoogleManager:
                         if size > limit:
                             raise StoreError("integration_response_too_large")
                         parts.append(part)
+                    raw = b"".join(parts)
                     try:
-                        data = json.loads(b"".join(parts)) if parts else {}
+                        data = json.loads(raw) if raw else {}
+                        if 200 <= response.status_code < 300 and (
+                            not isinstance(data, dict)
+                            or "error" in data
+                            or (not raw and not url.endswith("/revoke"))
+                        ):
+                            raise ValueError
                     except ValueError:
+                        if 200 <= response.status_code < 300:
+                            raise StoreError("integration_invalid_response") from None
                         data = {}
                     return response.status_code, data if isinstance(data, dict) else {}
         except httpx.HTTPError:

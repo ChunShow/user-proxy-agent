@@ -77,6 +77,33 @@ def mail_body(payload):
     return "".join(parser.parts).strip()
 
 
+def calendar_rows(data, kind):
+    if "items" not in data and data.get("kind") != kind:
+        raise StoreError("integration_invalid_response")
+    rows = data.get("items", [])
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows[:50]):
+        raise StoreError("integration_invalid_response")
+    return rows
+
+
+def event_time(value):
+    if not isinstance(value, dict):
+        raise StoreError("integration_invalid_response")
+    result = {
+        key: bounded(value.get(key), 100)
+        for key in ("date", "dateTime", "timeZone")
+        if key in value
+    }
+    try:
+        stamp = result.get("dateTime") or result.get("date")
+        if not stamp:
+            raise ValueError
+        datetime.fromisoformat(stamp)
+    except ValueError:
+        raise StoreError("integration_invalid_response") from None
+    return result
+
+
 class GoogleQueries:
     def __init__(self, manager, owner):
         self.manager, self.owner = manager, owner
@@ -88,7 +115,7 @@ class GoogleQueries:
             [CALENDAR_LIST],
             params={"maxResults": 50},
         )
-        rows = data.get("items", [])
+        rows = calendar_rows(data, "calendar#calendarList")
         return {
             "source": "Google Calendar",
             "untrusted_external_data": True,
@@ -119,7 +146,7 @@ class GoogleQueries:
                 "maxResults": 50,
             },
         )
-        rows = data.get("items", [])
+        rows = calendar_rows(data, "calendar#events")
         return {
             "source": "Google Calendar",
             "untrusted_external_data": True,
@@ -130,8 +157,8 @@ class GoogleQueries:
                 {
                     "id": bounded(r.get("id")),
                     "summary": bounded(r.get("summary")),
-                    "start": r.get("start", {}),
-                    "end": r.get("end", {}),
+                    "start": event_time(r.get("start")) if r.get("status") != "cancelled" else {},
+                    "end": event_time(r.get("end")) if r.get("status") != "cancelled" else {},
                     "status": r.get("status"),
                     "location": bounded(r.get("location")),
                     "description": bounded(r.get("description"), 2000),

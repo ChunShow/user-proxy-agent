@@ -9,6 +9,10 @@ interface Proposal {
   version: number; account_email: string
   payload: { title?: string; start?: string; end?: string; description?: string; location?: string; to?: string[]; subject?: string; body?: string }
 }
+function calendarTime(value = '') {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(date)
+}
 const labels: Record<Status, string> = { pending: '내용을 확인해 주세요', executing: '실행 결과 확인 중', succeeded: '완료', failed: '실행하지 못했어요', unknown: '실행 여부 확인 필요', rejected: '취소됨', expired: '확인 기한이 지났어요' }
 function merge(previous: Proposal[], items: Proposal[]) {
   const records = new Map(previous.map(item => [item.id, item]))
@@ -70,13 +74,14 @@ export default function ActionCards({ conversationId }: { conversationId: string
         <dt>받는 사람</dt><dd>{item.payload.to?.join(', ')}</dd>
         <dt>제목</dt><dd>{item.payload.subject}</dd><dt>본문</dt><dd className="action-body">{item.payload.body}</dd>
       </> : <><dt>일정</dt><dd>{item.payload.title}</dd>
-        <dt>시간</dt><dd>{item.payload.start}<br />~ {item.payload.end}</dd>
+        <dt>시간 <span className="action-timezone">한국 시간</span></dt><dd><time dateTime={item.payload.start} title={item.payload.start}>{calendarTime(item.payload.start)}</time><br />~ <time dateTime={item.payload.end} title={item.payload.end}>{calendarTime(item.payload.end)}</time></dd>
         {item.payload.location && <><dt>장소</dt><dd>{item.payload.location}</dd></>}
         {item.payload.description && <><dt>설명</dt><dd className="action-body">{item.payload.description}</dd></>}
       </>}</dl>
       {item.status === 'pending' && <><p className="action-note">확인한 내용으로 한 번 실행합니다. 수정하려면 취소 후 채팅으로 다시 요청해 주세요. 30분 뒤 만료됩니다.</p>
         <div className="action-buttons"><button className="action-confirm" disabled={busy.includes(item.id)} onClick={() => void decide(item, 'approve')}>{item.kind === 'email' ? '확인하고 발송' : '확인하고 등록'}</button><button disabled={busy.includes(item.id)} onClick={() => void decide(item, 'reject')}>취소</button></div></>}
       {item.status === 'unknown' && <p className="action-note">응답을 확인하지 못해 자동으로 다시 실행하지 않습니다. Google에서 실제 메일 또는 일정을 먼저 확인해 주세요.</p>}
+      {item.status === 'failed' && <p className="action-note">권한과 계정을 확인한 뒤 채팅에서 새로 요청해 주세요.</p>}
       {item.status === 'succeeded' && <p className="action-note">Google에서 {item.kind === 'email' ? '발송' : '등록'}을 확인했습니다.</p>}
       {errors[item.id] && <p className="action-error" role="alert">{errors[item.id]}</p>}
     </section>)}
