@@ -80,7 +80,7 @@ async def call_history(context: CallContext) -> str:
         context.manager.store.list, context.owner, context.conversation_id
     )
     rows = [
-        {k: c[k] for k in ("id", "subject", "status", "outcome", "reported_summary")}
+        {k: c[k] for k in ("id", "subject", "status", "outcome", "reported_summary", "error_code")}
         for c in page["items"][:5]
     ]
     if not rows:

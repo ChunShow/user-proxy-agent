@@ -146,3 +146,15 @@ async def test_chat_task_cancellation_after_acceptance_does_not_stop_call(tmp_pa
     assert not g.closed
     await m.shutdown()
     assert g.hangups == 1
+
+
+async def test_main_chat_receives_confirmed_carrier_reason(tmp_path):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    g.status = "no_answer"
+    await m.start(o, c, u, spec())
+    await m.wait_idle()
+    records = await call_history(CallContext(m, o, c, u))
+    saved = json.loads(records.split("\n", 1)[1])
+    assert saved[0]["error_code"] == "call_no_answer"
+    assert saved[0]["status"] == "ended"
+    assert "destination" not in saved[0]

@@ -121,6 +121,27 @@ test('preparation, dialing and failure states render without claiming completion
   await expect(card.getByText('종료됨', { exact: true })).toHaveCount(0)
 })
 
+for (const [error, message] of [
+  ['call_no_answer', '상대가 전화를 받지 않았습니다.'],
+  ['call_busy', '상대가 통화 중이어서 연결하지 못했습니다.'],
+  ['call_failed', '회선 연결에 실패했습니다.'],
+  ['call_canceled', '통화 연결이 취소됐습니다.'],
+  ['call_audio_failed', '통화 음성을 연결하거나 전달하는 중 문제가 발생했습니다.'],
+]) {
+  test(`ended call explains ${error} without offering a redial`, async ({ page }) => {
+    const fixture = await phoneFixture(page, 'ended')
+    fixture.set({ outcome: 'incomplete', error_code: error })
+    await page.goto(`/?conversation=${cid}`)
+    const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+    await expect(card.getByText(message, { exact: true })).toBeVisible()
+    await expect(card.getByText('확인하지 못한 내용이 남아 있습니다.')).toHaveCount(0)
+    await expect(card.getByRole('button')).toHaveCount(0)
+    await page.reload()
+    await expect(card.getByText(message, { exact: true })).toBeVisible()
+    expect(fixture.mock.calls).toHaveLength(0)
+  })
+}
+
 test('phone surface desktop and mobile visual evidence', async ({ page }) => {
   await phoneFixture(page)
   await page.setViewportSize({ width: 1440, height: 1000 })

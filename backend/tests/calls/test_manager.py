@@ -312,3 +312,83 @@ async def test_disconnect_during_stop_persistence_still_stops_worker(tmp_path, m
     finally:
         await m.shutdown()
     assert s.get(o, a["id"])["status"] == "ended"
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "통화 가능한지는 추측하지 말고 웹으로 확인해줘.",
+        "전화 상대에게 예약은 하지 말고 시간만 물어봐.",
+    ],
+)
+async def test_call_request_accepts_constraints_on_the_conversation(tmp_path, condition):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    uid = add_user(db, o, c, "01000000001로 전화 걸어줘. " + condition)["user_message_id"]
+    try:
+        call = await m.start(o, c, uid, spec())
+        await until(lambda: s.get(o, call["id"])["status"] == "connected")
+        assert g.dials == 1
+    finally:
+        await m.shutdown()
+
+
+@pytest.mark.parametrize(
+    "user_request",
+    [
+        "01000000001로 전화하지 말고 문자 보내줘.",
+        "01000000001로 전화는 절대 걸지 말아줘.",
+        "01000000001로 전화 걸어줘. 아니 전화 걸지 마.",
+        "01000000001로 통화 연결하지 말아 주세요.",
+        "01000000001로 전화 걸어주지 마세요.",
+        "01000000001로 전화 안 걸어줘도 돼.",
+        "01000000001 통화 요금은 얼마야?",
+    ],
+)
+async def test_call_request_still_rejects_direct_prohibitions(tmp_path, user_request):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    uid = add_user(db, o, c, user_request)["user_message_id"]
+    with pytest.raises(StoreError, match="call_request_required"):
+        await m.start(o, c, uid, spec())
+    assert g.dials == 0
+
+
+@pytest.mark.parametrize("status", ["no_answer", "busy", "failed", "canceled"])
+@pytest.mark.parametrize("during_media_wait", [False, True])
+async def test_carrier_end_reason_survives_media_wait_failure(tmp_path, status, during_media_wait):
+    m, g, db, s, o, c, u = manager(tmp_path)
+
+    @asynccontextmanager
+    async def disconnected_media(provider_id):
+        g.status = status
+        raise ProviderFailure("clawops_call_not_connected")
+        yield  # pragma: no cover
+
+    if during_media_wait:
+        g.media = disconnected_media
+    else:
+        g.status = status
+    call = await m.start(o, c, u, spec())
+    await m.wait_idle()
+    result = s.get(o, call["id"])
+    assert result["status"] == "ended"
+    assert result["error_code"] == f"call_{status}"
+    assert result["outcome"] == "incomplete"
+    assert g.dials == 1 and g.hangups == 0
+    assert s.active(o) == []
+
+
+async def test_audio_failure_on_connected_line_is_not_mislabeled_as_no_answer(tmp_path):
+    m, g, db, s, o, c, u = manager(tmp_path)
+
+    @asynccontextmanager
+    async def broken_media(provider_id):
+        raise ProviderFailure("clawops_stream_failed")
+        yield  # pragma: no cover
+
+    g.media = broken_media
+    call = await m.start(o, c, u, spec())
+    await m.wait_idle()
+    result = s.get(o, call["id"])
+    assert result["status"] == "ended"
+    assert result["error_code"] == "call_audio_failed"
+    assert g.hangups == 1 and g.dials == 1

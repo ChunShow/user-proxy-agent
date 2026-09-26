@@ -72,7 +72,14 @@ async def open_gateway(settings):
 def requested_number(current, texts, destination):
     # The LLM resolves intent, while the server requires an explicit call imperative
     # in this user turn and a literal number in user-authored conversation text.
-    if re.search(r"(전화|통화).{0,16}(하지|걸지|말아|말고|금지)", current):
+    # Match a prohibition of the call action, not a constraint on the conversation
+    # such as "통화 가능한지는 추측하지 말고 확인해줘".
+    if re.search(
+        r"(?:전화|통화)(?:를|는|도|은)?\s*"
+        r"(?:(?:절대|다시|아직|지금|오늘|내일|당장은|이제|함부로)\s*)*"
+        r"(?:(?:연결|시작)?\s*하지|걸지|걸어\s*주지|해\s*주지|안\s*(?:걸|해)|말아|말고|금지)",
+        current,
+    ):
         return False
     if not re.search(
         r"(전화|통화).{0,80}(걸어|줘|주세요|해\s*주|진행|시작|부탁|해라)", current, re.S
@@ -363,14 +370,19 @@ class CallManager:
                         # A failed/busy call cannot establish a successful conversation.
                         if snapshot.status != "completed" and outcome == "model_reported_success":
                             outcome = "incomplete"
+                        error_code = row["error_code"]
+                        if error_code == "call_end_unconfirmed":
+                            error_code = None
+                        # A media wait can fail because nobody answered. The carrier's
+                        # confirmed disposition is more specific than that exception.
+                        if not row["stop_requested"] and snapshot.status != "completed":
+                            error_code = f"call_{snapshot.status}"
                         await self.db(
                             self.store.update,
                             call_id,
                             status="ended",
                             outcome=outcome,
-                            error_code=None
-                            if row["error_code"] == "call_end_unconfirmed"
-                            else row["error_code"],
+                            error_code=error_code,
                         )
                         return
                 except ProviderFailure:

@@ -6,6 +6,13 @@ const phoneLabels: Record<PhoneStatus, string> = {
   preparing: '통화 준비 중', dialing: '연결 중', connected: '통화 중', ending: '종료 확인 중',
   ended: '종료됨', failed: '연결하지 못함', canceled: '발신 취소됨', unknown: '연결 확인 필요',
 }
+const callProblems: Record<string, string> = {
+  call_no_answer: '상대가 전화를 받지 않았습니다.',
+  call_busy: '상대가 통화 중이어서 연결하지 못했습니다.',
+  call_failed: '회선 연결에 실패했습니다.',
+  call_canceled: '통화 연결이 취소됐습니다.',
+  call_audio_failed: '통화 음성을 연결하거나 전달하는 중 문제가 발생했습니다.',
+}
 export interface PhoneActions {
   onStop: (id: string) => void
   onRefresh: (id: string) => void
@@ -19,6 +26,7 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error,
   const active = isActiveCall(call)
   const ending = call.status === 'ending' || call.stop_requested
   const label = ending && active && call.status !== 'unknown' ? '종료 확인 중' : phoneLabels[call.status]
+  const problem = call.error_code ? callProblems[call.error_code] : undefined
   return <section className="phone-card" aria-label={`${call.subject} 통화`}>
     <div className="phone-heading"><h2><Icon name="phone" />{call.subject}</h2><span className={`phone-state phone-${call.status}`} role="status">{label}</span></div>
     <p className="phone-destination">{call.destination}</p>
@@ -39,10 +47,11 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error,
     })}
     {call.reported_summary && <div className="phone-result"><p className="phone-result-label">통화 도우미가 정리한 결과</p><p>{call.reported_summary}</p></div>}
     {call.outcome === 'model_reported_success' && <p className="phone-note">통화 도우미가 필요한 답을 재확인했다고 보고했습니다.</p>}
-    {call.outcome === 'incomplete' && <p className="phone-note">확인하지 못한 내용이 남아 있습니다.</p>}
+    {call.outcome === 'incomplete' && !problem && <p className="phone-note">확인하지 못한 내용이 남아 있습니다.</p>}
     {call.outcome === 'canceled' && <p className="phone-note">종료 요청에 따라 마쳤습니다.</p>}
     {call.status === 'unknown' && <p className="phone-problem">발신 결과를 확인하지 못했습니다. ClawOps에서 회선 상태를 확인해야 합니다. 자동으로 다시 걸지 않습니다.</p>}
-    {call.status === 'failed' && <p className="phone-problem">통화를 연결하지 못했습니다. 서버의 통화 설정과 회선 상태를 확인해 주세요.</p>}
+    {problem && <p className="phone-problem" role="status">{problem}</p>}
+    {call.status === 'failed' && !problem && <p className="phone-problem">통화를 연결하지 못했습니다. 서버의 통화 설정과 회선 상태를 확인해 주세요.</p>}
     {call.error_code === 'call_end_unconfirmed' && <p className="phone-problem">회선 종료를 아직 확인하지 못했습니다. 다시 확인해 주세요.</p>}
     {call.error_code === 'call_status_unavailable' && <p className="phone-problem">현재 회선 상태를 확인하지 못했습니다.</p>}
     {error && <p className="phone-problem" role="status">{error}</p>}
