@@ -32,6 +32,9 @@ class LiveBridge:
         self.transcripts = []
         self.coordinator = None
         self.input_bytes = self.sent_bytes = self.played_bytes = 0
+        self.generated_bytes = 0
+        self.interrupted = False
+        self.last_progress = None
         self.error, self.ending = None, None
         self.last_input_sound = self.last_output_sound = 0.0
         self.last_digit_context = None
@@ -79,6 +82,7 @@ class LiveBridge:
             if kind == "session.output_audio.delta":
                 self.stamp("output_audio_first_ms")
                 raw = audio_bytes(event.get("delta"), limit=240000)
+                self.generated_bytes += len(raw)
                 self.buffer.extend(raw)
                 while len(self.buffer) >= 160:
                     packet = bytes(self.buffer[:160])
@@ -241,13 +245,41 @@ class LiveBridge:
                 end["status"] = "playback_unconfirmed"
                 return
 
-    async def _clear_output(self):
+    async def save_progress(self, *, force=False):
+        if not self.coordinator:
+            return
+        snapshot = {
+            "generated_bytes": self.generated_bytes,
+            "sent_bytes": self.sent_bytes,
+            "playback_acked_bytes": self.played_bytes,
+            "interrupted": self.interrupted,
+        }
+        if not force and snapshot == self.last_progress:
+            return
+        try:
+            await self.coordinator.db(
+                self.coordinator.store.event, self.coordinator.call_id, "audio_progress", snapshot
+            )
+        except Exception:
+            # Display telemetry must not terminate or block the audio sending task.
+            return
+        self.last_progress = snapshot
+
+    async def progress(self):
+        while True:
+            await asyncio.sleep(1)
+            await self.save_progress()
+
+    async def _clear_output(self, *, interrupted=False):
         while not self.output.empty():
             self.output.get_nowait()
         self.buffer.clear()
         self.marks.clear()
         async with self.phone_lock:
             await self.media.send({"event": "clear"})
+        if interrupted:
+            self.interrupted = True
+            await self.save_progress(force=True)
 
     def report(self):
         return {
@@ -264,7 +296,7 @@ class LiveBridge:
         self.media = media
         tasks = [
             asyncio.create_task(f())
-            for f in (self.phone, self.receive, self.play, self.greet, self.finish)
+            for f in (self.phone, self.receive, self.play, self.greet, self.finish, self.progress)
         ]
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -278,6 +310,7 @@ class LiveBridge:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            await self.save_progress(force=True)
             if self.coordinator:
                 await self.coordinator.close()
             for _, future in self.pending.values():

@@ -215,7 +215,11 @@ class CallManager:
                 # Best effort clear before closing the media socket on direct stop/timeout.
                 if isinstance(bridge, (NativeAudioBridge, LiveBridge)):
                     try:
-                        await bridge._clear_output()
+                        if isinstance(bridge, LiveBridge):
+                            row = await self.db(self.store.record, call_id)
+                            await bridge._clear_output(interrupted=bool(row["stop_requested"]))
+                        else:
+                            await bridge._clear_output()
                     except Exception:
                         pass
 

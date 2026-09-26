@@ -224,12 +224,13 @@ class LiveStore:
 
     def activity(self, owner, call, after=0):
         with self.db.connection() as db:
-            self.calls._get(db, call, owner)
+            row = self.calls._get(db, call, owner)
             self._expire(db, call)
             rows = db.execute(
-                "SELECT * FROM call_activity WHERE call_id=? AND id>? ORDER BY id LIMIT 100",
+                "SELECT * FROM call_activity WHERE call_id=? AND id>? ORDER BY id LIMIT 101",
                 (call, after),
             ).fetchall()
+            has_more, rows = len(rows) > 100, rows[:100]
             questions = db.execute(
                 "SELECT * FROM call_confirmations WHERE call_id=? ORDER BY created_at LIMIT 30",
                 (call,),
@@ -237,4 +238,7 @@ class LiveStore:
             return {
                 "events": [dict(r) | {"content": json.loads(r["content"])} for r in rows],
                 "questions": [question_view(r) for r in questions],
+                "next_after": rows[-1]["id"] if rows else after,
+                "has_more": has_more,
+                "terminal": row["status"] in {"ended", "failed", "canceled"},
             }

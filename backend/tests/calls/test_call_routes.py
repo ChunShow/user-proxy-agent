@@ -86,3 +86,21 @@ def test_confirmation_routes_validate_identity_revision_and_no_redial(tmp_path):
         client.post("/api/session", json={})
         assert client.get(f"/api/calls/{call['id']}/activity").status_code == 404
         assert client.post(url, json=body).status_code == 404
+
+
+def test_activity_cursor_validation_and_empty_terminal_page(tmp_path):
+    app = create_app(database_path=tmp_path / "db.sqlite3")
+    with TestClient(app) as client:
+        _, call = seed(app, client)
+        app.state.calls.store.update(call["id"], status="ended")
+        url = f"/api/calls/{call['id']}/activity"
+        assert client.get(url + "?after=-1").status_code == 422
+        response = client.get(url + "?after=12")
+        assert response.headers["cache-control"] == "no-store"
+        assert response.json() == {
+            "events": [],
+            "questions": [],
+            "next_after": 12,
+            "has_more": False,
+            "terminal": True,
+        }

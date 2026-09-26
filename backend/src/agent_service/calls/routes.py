@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +24,12 @@ class AnswerBody(BaseModel):
 
 
 @router.get("/api/calls/{call_id}/activity")
-async def activity(call_id: UUID, request: Request, after: int = 0, owner=Depends(require_owner)):
+async def activity(
+    call_id: UUID,
+    request: Request,
+    after: int = Query(default=0, ge=0),
+    owner=Depends(require_owner),
+):
     manager = request.app.state.calls
     return response(await manager.db(LiveStore(manager.store).activity, owner, str(call_id), after))
 

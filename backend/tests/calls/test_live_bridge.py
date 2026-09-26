@@ -129,3 +129,59 @@ def test_backend_final_reply_excludes_progress_before_tools():
         )
         == "오후 4시 가능합니다"
     )
+
+
+@pytest.mark.asyncio
+async def test_progress_separates_generated_sent_and_acked_audio_and_records_stop(tmp_path):
+    from types import SimpleNamespace
+
+    from test_live_store import setup_live
+    from test_native_audio import Socket, phone_start, until
+
+    from agent_service.calls.live_bridge import LiveBridge
+    from agent_service.calls.media import MediaProtocol, NativeMedia
+
+    _, _, store, owner, call = setup_live(tmp_path)
+
+    async def db(fn, *args):
+        return fn(*args)
+
+    async def close():
+        pass
+
+    model, phone = Socket(), Socket()
+    bridge = LiveBridge(model, listen_first=True)
+    bridge.coordinator = SimpleNamespace(store=store, call_id=call, db=db, close=close)
+    media = NativeMedia(phone, MediaProtocol("ACtest", "CAtest"))
+    task = asyncio.create_task(bridge.run(media))
+    try:
+        await phone.input.put(phone_start())
+        await model.input.put(
+            {
+                "type": "session.output_audio.delta",
+                "delta": base64.b64encode(b"\xff" * 1600).decode(),
+            }
+        )
+        await until(lambda: bridge.sent_bytes == 1600)
+        # The carrier has not acknowledged playback just because audio was sent.
+        await phone.input.put({"event": "mark", "mark": {"name": "800"}})
+        await until(lambda: bridge.played_bytes == 800)
+        await asyncio.sleep(1.05)
+        progress = [
+            e for e in store.activity(owner, call)["events"] if e["kind"] == "audio_progress"
+        ]
+        assert len(progress) == 1
+        assert progress[0]["content"] == {
+            "generated_bytes": 1600,
+            "sent_bytes": 1600,
+            "playback_acked_bytes": 800,
+            "interrupted": False,
+        }
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    # Normal cleanup does not pretend there was a user interruption.
+    await bridge._clear_output()
+    assert store.activity(owner, call)["events"][-1]["content"]["interrupted"] is False
+    await bridge._clear_output(interrupted=True)
+    assert store.activity(owner, call)["events"][-1]["content"]["interrupted"] is True

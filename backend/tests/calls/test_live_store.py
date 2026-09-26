@@ -46,3 +46,23 @@ def test_timeout_and_restart_never_approve(tmp_path):
     live.cancel(call)
     assert all(q["status"] != "pending" for q in live.activity(owner, call)["questions"])
     assert live.question(call, q2["id"])["answer"] is None
+
+
+def test_activity_pages_recover_final_transcript_without_duplicates(tmp_path):
+    _, calls, live, owner, call = setup_live(tmp_path)
+    for i in range(205):
+        live.event(call, "transcript", {"role": "caller", "text": str(i)})
+    first = live.activity(owner, call)
+    assert len(first["events"]) == 100 and first["has_more"]
+    assert not first["terminal"]
+    calls.update(call, status="ended")
+    second = live.activity(owner, call, first["next_after"])
+    last = live.activity(owner, call, second["next_after"])
+    assert second["terminal"] and second["has_more"]
+    assert last["terminal"] and not last["has_more"]
+    events = first["events"] + second["events"] + last["events"]
+    assert [e["content"]["text"] for e in events] == [str(i) for i in range(205)]
+    empty = live.activity(owner, call, last["next_after"])
+    assert empty["events"] == [] and empty["next_after"] == last["next_after"]
+    with pytest.raises(StoreError):
+        live.activity("other", call)
