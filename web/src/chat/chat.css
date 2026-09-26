@@ -200,6 +200,12 @@
 .call-question-actions button { padding: 8px 12px; min-height: 40px; border: 1px solid var(--border, #dedede); border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
 .call-question-actions button:hover:not(:disabled) { background: var(--surface-hover, #f2f2f2); }
 .call-question-actions button:disabled { opacity: .45; cursor: wait; }
+.call-instructions { margin: 18px 0; padding-top: 16px; border-top: 1px solid var(--line); }
+.call-instructions ul { list-style: none; margin: 0; padding: 0; }
+.call-instructions li + li { margin-top: 16px; }
+.call-instruction-text { margin: 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-instruction-status { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.call-instructions .phone-note { margin-top: 4px; }
 .composer-target span { overflow-wrap: anywhere; min-width: 0; }
 
 .call-transcript { margin-top: 16px; border-top: 1px solid var(--line); }

@@ -2,7 +2,18 @@ import Icon from '../components/Icon'
 import CallTranscript from './CallTranscript'
 import { callResult } from './callResult'
 import { isActiveCall } from './calls'
-import type { CallConfirmation, PhoneCall, PhoneStatus } from './calls'
+import type { CallConfirmation, CallInstruction, PhoneCall, PhoneStatus } from './calls'
+
+const instructionLabels: Record<CallInstruction['status'], string> = {
+  pending: '전달 대기 중', sending: '전달 중', delivered: '통화 도우미에게 전달됨',
+  not_applied: '전달하지 못함', delivery_unknown: '전달 여부 확인 필요',
+}
+function instructionNote(item: CallInstruction) {
+  if (item.status === 'delivered') return '상대방의 답변은 통화 내역에서 확인해 주세요.'
+  if (item.status === 'delivery_unknown') return '전달을 확인하지 못했어요. 다시 요청하려면 채팅에 새 메시지를 남겨 주세요.'
+  if (item.status === 'not_applied') return item.error_code === 'service_restarted'
+    ? '서버 연결이 다시 시작되어 전달하지 못했어요.' : '통화가 종료되어 전달하지 못했어요.'
+}
 
 const phoneLabels: Record<PhoneStatus, string> = {
   preparing: '통화 준비 중', dialing: '연결 중', connected: '통화 중', ending: '종료 확인 중',
@@ -35,6 +46,14 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error,
     <p className="phone-destination">{call.destination}</p>
     <p className="phone-purpose">{call.purpose}</p>
     <CallTranscript key={call.id} callId={call.id} active={active} />
+    {!!call.instructions?.length && <div className="call-instructions" aria-label="통화에 추가한 요청">
+      <p className="call-question-caption">통화에 추가한 요청</p>
+      <ul>{call.instructions.map(item => <li key={item.id}>
+        <p className="call-instruction-text">{item.text}</p>
+        <p className="call-instruction-status" role="status">{instructionLabels[item.status]}</p>
+        {instructionNote(item) && <p className="phone-note">{instructionNote(item)}</p>}
+      </li>)}</ul>
+    </div>}
     {call.confirmations?.map(question => {
       const waiting = active && !ending && question.status === 'pending'
       const labels = { pending: waiting ? '답변을 기다리고 있어요' : '질문 마감', answered: '통화에 전달 중', applied: '통화 도우미에게 전달됨', expired: '답변 시간이 지났어요', canceled: '질문 마감', failed: '통화에 반영하지 못했어요' }

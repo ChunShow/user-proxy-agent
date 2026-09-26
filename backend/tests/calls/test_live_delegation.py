@@ -309,3 +309,36 @@ async def test_instruction_rejected_when_farewell_is_pending(tmp_path):
         await coordinator.submit(ctx, "새 조건")
     assert calls.get(ctx.owner, call)["instructions"] == []
     await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_canceled_answer_is_not_presented_as_confirmed_in_future_context(tmp_path):
+    from test_call_instructions import setup_instructions
+
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, live, instructions, ctx, call = setup_instructions(tmp_path)
+    revision = live.begin(call, "old")
+    question = live.ask(call, "old", revision, "3시 가능한가요?", [])
+    live.answer(ctx.owner, call, question["id"], "3시 가능", revision, "answer-1")
+    item = instructions.submit(ctx, call, "6시로 변경")
+    instructions.transition(call, item["id"], "pending", "sending")
+    instructions.transition(call, item["id"], "sending", "delivered")
+    contexts = []
+
+    class Bridge:
+        transcripts = [{"role": "caller", "text": "시간 확인"}]
+
+        async def deliver_result(self, *args):
+            pass
+
+    async def run(context, tools):
+        contexts.append(context)
+        return "새 시간 확인"
+
+    coordinator = DelegationCoordinator(calls, call, Bridge(), runner=run)
+    await coordinator.request("new")
+    await until(lambda: bool(contexts))
+    await coordinator.close()
+    assert contexts[0]["requesting_user_answers"] == []
+    assert contexts[0]["requesting_user_instructions"] == ["6시로 변경"]

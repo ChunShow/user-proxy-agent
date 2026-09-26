@@ -1,6 +1,12 @@
 import { request } from './conversations'
 
 export type PhoneStatus = 'preparing' | 'dialing' | 'connected' | 'ending' | 'ended' | 'failed' | 'canceled' | 'unknown'
+export interface CallInstruction {
+  id: string
+  text: string
+  status: 'pending' | 'sending' | 'delivered' | 'not_applied' | 'delivery_unknown'
+  error_code: string | null
+}
 export interface CallConfirmation {
   id: string
   revision: number
@@ -25,6 +31,7 @@ export interface PhoneCall {
   stop_requested: boolean
   version: number
   confirmations?: CallConfirmation[]
+  instructions?: CallInstruction[]
 }
 interface Page { items: PhoneCall[]; next_cursor: string | null }
 export interface CallActivityEvent {

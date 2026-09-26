@@ -17,7 +17,12 @@ pytestmark = pytest.mark.asyncio
 async def test_tools_inject_ownership_and_return_without_waiting_for_phone(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     tools = build_call_tools(CallContext(m, o, c, u))
-    assert {t.name for t in tools} == {"start_phone_call", "get_phone_call", "end_phone_call"}
+    assert {t.name for t in tools} == {
+        "start_phone_call",
+        "get_phone_call",
+        "end_phone_call",
+        "update_phone_call",
+    }
     schema = tools[0].args_schema.model_json_schema()["properties"]
     assert not {"owner", "conversation_id", "source_user_message_id"} & schema.keys()
     accepted = await tools[0].ainvoke(spec().model_dump())
@@ -101,6 +106,7 @@ async def test_real_graph_calls_tool_twice_but_dials_once_and_keeps_chat_free(tm
         "start_phone_call",
         "get_phone_call",
         "end_phone_call",
+        "update_phone_call",
     }
     outputs = [json.loads(v["content"]) for v in requests[1]["messages"] if v["role"] == "tool"]
     assert outputs[0]["call_id"] == outputs[1]["call_id"] and g.dials == 1

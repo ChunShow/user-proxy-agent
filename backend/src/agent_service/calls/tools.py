@@ -72,7 +72,32 @@ def build_call_tools(context: CallContext):
 
         return await guarded(stop)
 
-    return [start_phone_call, get_phone_call, end_phone_call]
+    @tool
+    async def update_phone_call(call_id: str, instruction: str) -> dict:
+        """현재 대화의 연결된 Live 통화에 사용자가 명시한 추가 조건을 전달한다.
+
+        instruction은 현재 사용자 메시지의 요청 범위로만 구성한다. 일반 질문은 보내지 않는다.
+        대상/내용이 불명확하면 먼저 묻는다. pending은 접수, delivered는 모델 수신 확인이며
+        상대방 청취나 업무 완료를 뜻하지 않는다. 오류/미확인은 자동 재시도하지 않는다.
+        """
+
+        async def update():
+            item = await context.manager.update(
+                context.owner,
+                context.conversation_id,
+                context.source_user_message_id,
+                str(UUID(call_id)),
+                instruction,
+            )
+            return {
+                "instruction_id": item["id"],
+                "call_id": item["call_id"],
+                "status": item["status"],
+            }
+
+        return await guarded(update)
+
+    return [start_phone_call, get_phone_call, end_phone_call, update_phone_call]
 
 
 async def call_history(context: CallContext) -> str:
@@ -80,7 +105,16 @@ async def call_history(context: CallContext) -> str:
         context.manager.store.list, context.owner, context.conversation_id
     )
     rows = [
-        {k: c[k] for k in ("id", "subject", "status", "outcome", "reported_summary", "error_code")}
+        {
+            **{
+                k: c[k]
+                for k in ("id", "subject", "status", "outcome", "reported_summary", "error_code")
+            },
+            "latest_instructions": [
+                {"text": item["text"][:500], "status": item["status"]}
+                for item in c.get("instructions", [])[-3:]
+            ],
+        }
         for c in page["items"][:5]
     ]
     if not rows:
