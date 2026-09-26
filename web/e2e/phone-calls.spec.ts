@@ -12,7 +12,7 @@ async function phoneFixture(page: Page, status = 'connected') {
   mock.conversations.set(other, { id: other, title: '다른 대화', updated_at: new Date().toISOString(), messages: [] })
   let call = { id: '00000000-0000-4000-8000-000000000503', conversation_id: cid, source_user_message_id: 'user-call',
     destination: '01000000001', subject: '통화 기능 테스트', purpose: '지금 통화가 가능한지 확인하기',
-    status, outcome: 'pending', reported_summary: '', error_code: null as string | null, stop_requested: false, version: 1 }
+    status, end_report: '{}', outcome: 'pending', reported_summary: '', error_code: null as string | null, stop_requested: false, version: 1 }
   let stops = 0
   await page.route('**/api/conversations/*/calls*', route => route.fulfill({ json: { items: route.request().url().includes(cid) ? [call] : [], next_cursor: null } }))
   await page.route('**/api/calls/**', route => {
@@ -211,3 +211,21 @@ test('live question restores and a targeted answer is sent without starting chat
   await expect(page.getByText(q.answer!, { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
+
+for (const [status, message] of [
+  ['audio_drained', '요청을 마쳤다고 보고했습니다. 마지막 음성의 재생 완료는 확정하지 못했습니다.'],
+  ['playback_unconfirmed', '음성 재생 확인을 기다리다 통화를 마쳤습니다.'],
+]) {
+  test(`live ${status} explains playback separately from task outcome`, async ({ page }) => {
+    const fixture = await phoneFixture(page, 'ended')
+    fixture.set({ outcome: 'incomplete', reported_summary: '합성 테스트 결과',
+      end_report: JSON.stringify({ status, reason: 'goal_achieved' }) })
+    await page.goto(`/?conversation=${cid}`)
+    const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+    await expect(card.getByText(message)).toBeVisible()
+    await expect(card.getByText('확인하지 못한 내용이 남아 있습니다.')).toHaveCount(0)
+    await expect(card.getByText('통화 도우미가 정리한 결과')).toBeVisible()
+    await page.reload()
+    await expect(card.getByText(message)).toBeVisible()
+  })
+}

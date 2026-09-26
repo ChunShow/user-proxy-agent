@@ -392,3 +392,27 @@ async def test_audio_failure_on_connected_line_is_not_mislabeled_as_no_answer(tm
     assert result["status"] == "ended"
     assert result["error_code"] == "call_audio_failed"
     assert g.hangups == 1 and g.dials == 1
+
+
+@pytest.mark.parametrize("status", ["audio_drained", "playback_unconfirmed"])
+async def test_live_completion_retains_model_summary_without_claiming_success(tmp_path, status):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    a = s.register(o, c, u, spec())
+    s.update(a["id"], status="connected")
+    g.status = "completed"
+    await m._finish(
+        g,
+        a["id"],
+        "CAtest",
+        {
+            "mode": "gpt_live",
+            "end_call": {
+                "reason": "goal_achieved",
+                "status": status,
+                "summary": "합성 답변 전달 보고",
+            },
+        },
+    )
+    result = s.get(o, a["id"])
+    assert result["outcome"] == "incomplete"
+    assert result["reported_summary"] == "합성 답변 전달 보고"

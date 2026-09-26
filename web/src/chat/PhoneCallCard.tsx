@@ -1,5 +1,6 @@
 import Icon from '../components/Icon'
 import CallTranscript from './CallTranscript'
+import { callResult } from './callResult'
 import { isActiveCall } from './calls'
 import type { CallConfirmation, PhoneCall, PhoneStatus } from './calls'
 
@@ -24,6 +25,7 @@ export interface PhoneActions {
   answerPending?: string[]
 }
 export default function PhoneCallCard({ call, onStop, onRefresh, pending, error, onAnswer, onReply, answerPending = [] }: PhoneActions & { call: PhoneCall }) {
+  const result = callResult(call)
   const active = isActiveCall(call)
   const ending = call.status === 'ending' || call.stop_requested
   const label = ending && active && call.status !== 'unknown' ? '종료 확인 중' : phoneLabels[call.status]
@@ -47,10 +49,8 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error,
         </div>}
       </div>
     })}
-    {call.reported_summary && <div className="phone-result"><p className="phone-result-label">통화 도우미가 정리한 결과</p><p>{call.reported_summary}</p></div>}
-    {call.outcome === 'model_reported_success' && <p className="phone-note">통화 도우미가 필요한 답을 재확인했다고 보고했습니다.</p>}
-    {call.outcome === 'incomplete' && !problem && <p className="phone-note">확인하지 못한 내용이 남아 있습니다.</p>}
-    {call.outcome === 'canceled' && <p className="phone-note">종료 요청에 따라 마쳤습니다.</p>}
+    {result.summary && <div className="phone-result"><p className="phone-result-label">통화 도우미가 정리한 결과</p><p>{result.summary}</p></div>}
+    {result.note && <p className="phone-note">{result.note}</p>}
     {call.status === 'unknown' && <p className="phone-problem">발신 결과를 확인하지 못했습니다. ClawOps에서 회선 상태를 확인해야 합니다. 자동으로 다시 걸지 않습니다.</p>}
     {problem && <p className="phone-problem" role="status">{problem}</p>}
     {call.status === 'failed' && !problem && <p className="phone-problem">통화를 연결하지 못했습니다. 서버의 통화 설정과 회선 상태를 확인해 주세요.</p>}

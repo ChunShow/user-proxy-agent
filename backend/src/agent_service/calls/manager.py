@@ -353,7 +353,12 @@ class CallManager:
             )
             summary = (
                 end.get("summary", "")[:1000]
-                if verified or end.get("status") == "audio_drained"
+                if verified
+                or end.get("status") == "audio_drained"
+                or (
+                    (report or {}).get("mode") == "gpt_live"
+                    and end.get("status") == "playback_unconfirmed"
+                )
                 else ""
             )
             await self.db(

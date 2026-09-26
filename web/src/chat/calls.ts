@@ -19,6 +19,7 @@ export interface PhoneCall {
   purpose: string
   status: PhoneStatus
   outcome: 'pending' | 'model_reported_success' | 'incomplete' | 'canceled'
+  end_report?: string
   reported_summary: string
   error_code: string | null
   stop_requested: boolean
