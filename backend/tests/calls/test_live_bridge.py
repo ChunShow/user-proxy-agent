@@ -212,6 +212,8 @@ async def ending_bridge(monkeypatch):
             self.sent = []
             self.gate = asyncio.Event()
             self.gate.set()
+            self.mark_gate = asyncio.Event()
+            self.mark_gate.set()
 
         async def events(self):
             while True:
@@ -220,6 +222,8 @@ async def ending_bridge(monkeypatch):
         async def send(self, event):
             if event["event"] == "media":
                 await self.gate.wait()
+            if event["event"] == "mark":
+                await self.mark_gate.wait()
             self.sent.append(event)
 
     model, media = Model(), Media()
@@ -377,3 +381,19 @@ async def test_voice_queued_behind_silence_prevents_early_hangup(ending_bridge):
     await asyncio.wait_for(asyncio.shield(finish), 0.5)
     assert bridge.ending["status"] == "playback_unconfirmed"
     assert bridge.ending["playback"]["pending_voice_packets"] == 1
+
+
+@pytest.mark.asyncio
+async def test_blocked_mark_send_does_not_disable_hangup_deadline(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    media.mark_gate.clear()
+    await audio(b"\xaa" * 160)
+    await until(lambda: bridge.sent_bytes == 160)
+    finish = asyncio.create_task(bridge.finish())
+    tasks.append(finish)
+    await asyncio.sleep(0.15)
+    clock[0] = 126
+    await asyncio.wait_for(asyncio.shield(finish), 0.5)
+    assert bridge.ending["status"] == "playback_unconfirmed"

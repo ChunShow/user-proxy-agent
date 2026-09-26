@@ -177,7 +177,16 @@ class LiveBridge:
                     self.last_output_sound = time.monotonic()
                     if self.ending:
                         self.ending["heard_output"] = True
-                if self.sent_bytes % 800 == 0:
+                # Mark the last short packet as well as periodic 100ms boundaries.
+                # Keep network writes out of finish(), so a stalled send cannot
+                # suspend the independent hangup deadline.
+                tail_needs_mark = (
+                    self.ending
+                    and self.output.empty()
+                    and self.voice_end_bytes > self.played_bytes
+                    and not any(count >= self.voice_end_bytes for count in self.marks.values())
+                )
+                if self.sent_bytes % 800 == 0 or tail_needs_mark:
                     await self._mark_playback()
             deadline += len(packet) / 8000
             await asyncio.sleep(max(0, deadline - time.monotonic()))
@@ -247,17 +256,6 @@ class LiveBridge:
             await asyncio.sleep(0.1)
             end = self.ending
             if not end:
-                continue
-            # Mark a short final packet even if there is no next 100ms periodic mark.
-            # Do not wait on a blocked media send: the 25s fallback must still run.
-            if (
-                self.voice_end_bytes > self.played_bytes
-                and not self.phone_lock.locked()
-                and not any(count >= self.voice_end_bytes for count in self.marks.values())
-            ):
-                async with self.phone_lock:
-                    await self._mark_playback()
-            if self.ending is not end:
                 continue
             now = time.monotonic()
             elapsed = now - end["requested_at"]
