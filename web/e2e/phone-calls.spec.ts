@@ -17,6 +17,9 @@ async function phoneFixture(page: Page, status = 'connected') {
   await page.route('**/api/conversations/*/calls*', route => route.fulfill({ json: { items: route.request().url().includes(cid) ? [call] : [], next_cursor: null } }))
   await page.route('**/api/calls/**', route => {
     const url = route.request().url()
+    if (url.includes('/activity')) return route.fulfill({ json: { events: [], questions: [],
+      next_after: Number(new URL(url).searchParams.get('after')), has_more: false,
+      terminal: ['ended', 'failed', 'canceled'].includes(call.status) } })
     if (url.endsWith('/active')) return route.fulfill({ json: { items: ['ended', 'failed', 'canceled'].includes(call.status) ? [] : [call] } })
     if (url.endsWith('/stop')) { stops++; call = { ...call, stop_requested: true, status: 'ending', version: call.version + 1 } }
     return route.fulfill({ json: call })
@@ -135,7 +138,8 @@ for (const [error, message] of [
     const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
     await expect(card.getByText(message, { exact: true })).toBeVisible()
     await expect(card.getByText('확인하지 못한 내용이 남아 있습니다.')).toHaveCount(0)
-    await expect(card.getByRole('button')).toHaveCount(0)
+    await expect(card.getByRole('button', { name: '통화 종료', exact: true })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: /재발신|다시 걸기/ })).toHaveCount(0)
     await page.reload()
     await expect(card.getByText(message, { exact: true })).toBeVisible()
     expect(fixture.mock.calls).toHaveLength(0)
@@ -190,7 +194,7 @@ test('live question restores and a targeted answer is sent without starting chat
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/?conversation=${cid}`)
   await expect(page.getByText(q.question, { exact: true })).toBeVisible()
-  await page.screenshot({ path: '../docs/verification/step-06-question-mobile.png', fullPage: true })
+  await page.screenshot({ path: '../docs/verification/step-06b-question-mobile.png', fullPage: true })
   await page.reload()
   await page.getByRole('button', { name: '직접 답변하기', exact: true }).click()
   const input = page.getByRole('textbox', { name: '메시지' })

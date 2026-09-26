@@ -201,3 +201,20 @@
 .call-question-actions button:hover:not(:disabled) { background: var(--surface-hover, #f2f2f2); }
 .call-question-actions button:disabled { opacity: .45; cursor: wait; }
 .composer-target span { overflow-wrap: anywhere; min-width: 0; }
+
+.call-transcript { margin-top: 16px; border-top: 1px solid var(--line); }
+.call-transcript-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 8px 0; border: 0; background: transparent; text-align: left; font-size: 13px; }
+.call-transcript-toggle span:last-child { color: var(--muted); font-size: 12px; }
+.call-transcript-caption { margin: 2px 0 10px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.call-transcript-scroll { max-height: 280px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-radius: 6px; background: var(--canvas); padding: 12px; overflow-anchor: none; }
+.call-transcript-scroll ol { margin: 0; padding: 0; list-style: none; }
+.call-transcript-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; padding: 6px 0; }
+.call-transcript-speaker { color: var(--muted); font-size: 11px; line-height: 1.9; }
+.call-transcript-row p { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-transcript-empty { margin: 6px 0; font-size: 12px; line-height: 1.7; color: var(--muted); }
+.call-transcript-scroll + .call-transcript-caption { margin-top: 8px; }
+.call-transcript-latest, .call-transcript-error button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 12px; }
+.call-transcript-latest { display: block; margin: 8px auto; }
+.call-transcript-error { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.call-transcript-error p { margin: 8px 0; }
+@media (max-width: 767px) { .call-transcript-scroll { max-height: 240px; padding: 10px; } }

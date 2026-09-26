@@ -26,6 +26,22 @@ export interface PhoneCall {
   confirmations?: CallConfirmation[]
 }
 interface Page { items: PhoneCall[]; next_cursor: string | null }
+export interface CallActivityEvent {
+  id: number
+  call_id: string
+  kind: string
+  content: Record<string, unknown>
+  created_at: number
+}
+export interface CallActivityPage {
+  events: CallActivityEvent[]
+  questions: CallConfirmation[]
+  next_after: number
+  has_more: boolean
+  terminal: boolean
+}
+export const getCallActivity = (id: string, after: number, signal?: AbortSignal) =>
+  request<CallActivityPage>(`/api/calls/${encodeURIComponent(id)}/activity?after=${after}`, undefined, signal)
 export const isActiveCall = (call: PhoneCall) => !['ended', 'failed', 'canceled'].includes(call.status)
 export const activeCalls = (signal?: AbortSignal) => request<{ items: PhoneCall[] }>('/api/calls/active', undefined, signal)
 export const listCalls = (id: string, cursor?: string, signal?: AbortSignal) => request<Page>(`/api/conversations/${encodeURIComponent(id)}/calls${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, undefined, signal)

@@ -10,7 +10,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --test src/api.test.ts src/chat/stream.test.ts",
+    "test": "node --test src/api.test.ts src/chat/stream.test.ts src/chat/transcriptData.test.ts",
     "build": "tsc --noEmit && vite build",
     "test:e2e": "playwright test"
   },

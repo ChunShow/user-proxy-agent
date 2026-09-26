@@ -132,20 +132,20 @@
 
 ## 작업 2: 전사 조립과 증분 조회
 
-**파일:** `web/src/chat/calls.ts`, 새 `callTranscript.ts`, `callTranscript.test.ts`,
+**파일:** `web/src/chat/calls.ts`, 새 `transcriptData.ts`, `transcriptData.test.ts`,
 `useCallActivity.ts`, `web/package.json`의 단위 테스트 실행 목록.
 
-- [ ] `CallActivityEvent`, `CallActivityPage` 타입과
+- [x] `CallActivityEvent`, `CallActivityPage` 타입과
   `getCallActivity(id, after, signal)` 요청 함수를 추가한다.
-- [ ] 순서가 다른 중복 이벤트, 화자 교대, 한국어 조각/공백, 빈 전사, 알 수 없는 이벤트를
+- [x] 순서가 다른 중복 이벤트, 화자 교대, 한국어 조각/공백, 빈 전사, 알 수 없는 이벤트를
   실제 조립 함수로 검사한다. 전송 ACK를 개별 문장의 성공으로 바꾸지 않는다.
-- [ ] 펼친 카드에만 `useCallActivity(callId, enabled)`를 연결한다. 통화별 커서를 분리하고
+- [x] 펼친 카드에만 `useCallActivity(callId, enabled)`를 연결한다. 통화별 커서를 분리하고
   1초마다 조회한다. 페이지가 남으면 최대 5페이지를 읽고 실행권을 반환한 후 계속한다.
   종료 상태이고 남은 페이지가 없으면 멈춘다.
-- [ ] 카드 접기/대화 전환/숨김 탭에서는 진행 중 요청을 취소하고 폴링을 멈춘다.
+- [x] 카드 접기/대화 전환/숨김 탭에서는 진행 중 요청을 취소하고 폴링을 멈춘다.
   복귀 시 마지막 커서부터 이어 읽고, 새로고침 후에는 저장된 이벤트로 다시 구성한다.
   실패 때 이미 받은 데이터와 커서는 유지한다. 오래된 다른 통화 응답을 현재 통화에 섞지 않는다.
-- [ ] 조립 단위 검사와 브라우저 API fixture 검사 통과 후 로컬 커밋한다.
+- [x] 조립 단위 검사와 브라우저 API fixture 검사 통과 후 로컬 커밋한다.
 
 **검증:** `cd web && npm test && npm run typecheck`; 다음 작업의 브라우저 통합 검사도 사용한다.
 
@@ -154,13 +154,13 @@
 **파일:** 새 `web/src/chat/CallTranscript.tsx`, `PhoneCallCard.tsx`, `chat.css`,
 새 `web/e2e/call-transcript.spec.ts`와 필요한 fixture.
 
-- [ ] 화자 구분·진행 상태·빈 내용·조회 오류·접기/펼치기를 실제 카드에 연결한다.
+- [x] 화자 구분·진행 상태·빈 내용·조회 오류·접기/펼치기를 실제 카드에 연결한다.
   기존 질문 카드와 통화 종료는 계속 조작 가능해야 한다.
-- [ ] 새 내용 자동 따라가기/이전 내용 읽기 위치 유지/새 내용 보기, 여러 페이지 복원,
+- [x] 새 내용 자동 따라가기/이전 내용 읽기 위치 유지/새 내용 보기, 여러 페이지 복원,
   종료 직전 이벤트·전환 직후 늦은 응답·숨김 탭 중단/재개를 브라우저로 검증한다.
-- [ ] 데스크톱·모바일·키보드로 확인한다. 기존 테스트 파일의 합성 화면 이미지는
+- [x] 데스크톱·모바일·키보드로 확인한다. 기존 테스트 파일의 합성 화면 이미지는
   불필요하게 덮어쓰지 않고 이번 화면의 합성 데이터 캡처만 검토한다.
-- [ ] `./scripts/check.sh`와 관련 브라우저 검사를 통과한 후 로컬 커밋한다.
+- [x] `./scripts/check.sh`와 관련 브라우저 검사를 통과한 후 로컬 커밋한다.
 
 **브라우저 검증:** `cd web && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- e2e/call-transcript.spec.ts`
 
@@ -186,3 +186,10 @@
 
 - 작업 1: 페이지 메타데이터 부재·음수 커서 허용·진행 정보 부재를 실패 테스트로 재현했다.
   수정 후 activity/route/LiveBridge/manager 관련 45개 검사와 Ruff를 통과했다.
+
+- 작업 2·3: 전사 조립/검증 단위 검사와 카드의 브라우저 검사를 먼저 실패시킨 뒤 구현했다.
+  대소문자를 구분하지 않는 macOS에서 모듈 이름 충돌을 피하도록 순수 함수 파일을
+  `transcriptData.ts`로 명확히 분리했다.
+- `./scripts/check.sh`: backend 162 passed, web 21 passed, Ruff/TS/ESLint/build 통과.
+- 전사 7개 + 기존 통화 카드 12개 + 질문 답변 1개, 총 관련 브라우저 검사 20개 통과.
+  데스크톱·모바일 및 질문 화면은 합성 데이터 캡처로 직접 검토했다.

@@ -1,4 +1,5 @@
 import Icon from '../components/Icon'
+import CallTranscript from './CallTranscript'
 import { isActiveCall } from './calls'
 import type { CallConfirmation, PhoneCall, PhoneStatus } from './calls'
 
@@ -31,6 +32,7 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error,
     <div className="phone-heading"><h2><Icon name="phone" />{call.subject}</h2><span className={`phone-state phone-${call.status}`} role="status">{label}</span></div>
     <p className="phone-destination">{call.destination}</p>
     <p className="phone-purpose">{call.purpose}</p>
+    <CallTranscript key={call.id} callId={call.id} active={active} />
     {call.confirmations?.map(question => {
       const waiting = active && !ending && question.status === 'pending'
       const labels = { pending: waiting ? '답변을 기다리고 있어요' : '질문 마감', answered: '통화에 전달 중', applied: '통화 도우미에게 전달됨', expired: '답변 시간이 지났어요', canceled: '질문 마감', failed: '통화에 반영하지 못했어요' }
