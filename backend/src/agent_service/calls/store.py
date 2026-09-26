@@ -102,7 +102,14 @@ class CallStore:
             "SELECT * FROM call_confirmations WHERE call_id=? ORDER BY created_at LIMIT 30",
             (row["id"],),
         ).fetchall()
-        return view(row) | {"confirmations": [question_view(q) for q in questions]}
+        instructions = db.execute(
+            "SELECT * FROM call_instructions WHERE call_id=? ORDER BY condition_revision",
+            (row["id"],),
+        ).fetchall()
+        return view(row) | {
+            "confirmations": [question_view(q) for q in questions],
+            "instructions": [dict(i) for i in instructions],
+        }
 
     def _get(self, db, call_id, owner=None):
         sql, args = "SELECT * FROM phone_calls WHERE id=?", [call_id]
@@ -165,6 +172,7 @@ class CallStore:
 
     def _update(self, db, call_id, changes):
         allowed = {
+            "condition_revision",
             "status",
             "provider_call_id",
             "dial_attempted_at",

@@ -2,7 +2,7 @@
 
 > **실행 방식:** 컨펌 후 직접 순차 구현한다. 각 작업은 실패 재현 → 구현 → 검증 → 로컬 커밋으로 진행한다.
 
-**상태:** proposed
+**상태:** in_progress
 **목표:** 같은 채팅에서 사용자가 새 조건을 전달하고, 진행 중 통화에 전달됐는지 확인한다.
 **구조:** 메인 DeepAgents의 도구 → 소유권을 확인한 지시 저장 → 실행 중 Live 통화에 전달 → ACK에 따른 상태 갱신.
 기존 질문·답변과 위임에는 조건 버전을 연결해 이전 조건의 결과를 폐기한다.
@@ -13,7 +13,7 @@
 
 사용자가 “7번은 나중에 하고 8번부터 해줘”라고 요청했다.
 7단계 음성 듣기는 보류하고, 6A 질문·답변/6B 전사 화면을 바탕으로 8단계를 먼저 진행한다.
-이 문서는 새 단계의 구체적인 계획이며 구현 컨펌 대기 상태다.
+세부 계획을 제시한 뒤 사용자가 “진행해줘”라고 승인했다. 이 승인을 근거로 로컬 구현과 자동 검사를 진행한다.
 자동 종료 후속 조사·검증은 사용자의 앞선 요청대로 후순위에 둔다.
 
 ## 사용자 흐름과 범위
@@ -62,16 +62,16 @@
 **파일:** 새 `backend/src/agent_service/calls/instructions.py`, 기존 `calls/live_store.py`,
 `calls/store.py`, `calls/manager.py`, 새 `backend/tests/calls/test_call_instructions.py`.
 
-- [ ] `phone_calls.condition_revision`과 `call_delegations.condition_revision`을 기본값 0으로
+- [x] `phone_calls.condition_revision`과 `call_delegations.condition_revision`을 기본값 0으로
   마이그레이션한다. 기존 통화·질문·전사를 보존하며 반복 시작 시 마이그레이션이 안전해야 한다.
-- [ ] `call_instructions`에 id/call_id/source_user_message_id/text/status/condition_revision/
+- [x] `call_instructions`에 id/call_id/source_user_message_id/text/status/condition_revision/
   error_code/created_at/updated_at을 저장한다. `InstructionStore.submit(context, call_id, text)`는
   소유권·같은 대화·사용자 메시지·상태·한 건 전달 중 제한·건수 제한을 한 트랜잭션에서 검증한다.
-- [ ] 접수 시 조건 버전을 올리고, 기존 running 위임과 pending/answered 질문을 취소한다.
+- [x] 접수 시 조건 버전을 올리고, 기존 running 위임과 pending/answered 질문을 취소한다.
   오래된 질문 답변은 적용 불가를 반환한다. 새 위임은 현재 조건 버전을 캡처하고 `_valid`가 확인한다.
-- [ ] 기존 call 조회/목록에 `instructions` 배열을 포함하고 변경 시 call.version을 올린다.
+- [x] 기존 call 조회/목록에 `instructions` 배열을 포함하고 변경 시 call.version을 올린다.
   내용·상태는 기존 소유자만 읽을 수 있다. 전사 activity 조회와 혼동하지 않는다.
-- [ ] 중복 접수·충돌·다른 소유자/대화·이미 종료된 통화·동시 요청·기존 DB 업그레이드와
+- [x] 중복 접수·충돌·다른 소유자/대화·이미 종료된 통화·동시 요청·기존 DB 업그레이드와
   늦은 질문 답변 거절을 실패 검사로 재현하고 수정한다.
 
 **검증:** `cd backend && uv run --locked pytest tests/calls/test_call_instructions.py tests/calls/test_live_store.py tests/calls/test_call_store.py -q`
@@ -131,3 +131,8 @@ ACK 전에는 완료로 표시하지 않으며, 갱신 전 조건의 늦은 결�
 기존 질문 응답·채팅·전사·직접 종료가 유지돼야 한다.
 실제 모델의 지시 해석과 실통화 반영 성공은 모사 검사 결과와 구분한다.
 구현 후 본인 번호의 실통화 1회에서 새 조건을 입력하는 검증 범위를 별도로 제시한다.
+
+## 실행 기록
+
+- 작업 1: 저장 기능 부재를 실패 검사로 확인한 뒤 조건 버전/지시 저장을 구현했다.
+  권한·중복·동시 접수·오래된 질문 답변·ACK와 종료 경합·구버전 DB 보존을 포함한 21개 검사와 Ruff 통과.

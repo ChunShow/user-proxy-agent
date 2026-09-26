@@ -4,6 +4,7 @@ import json
 import time
 from uuid import uuid4
 
+from agent_service.calls.instructions import conditions_ready
 from agent_service.storage import StoreError
 
 
@@ -31,6 +32,10 @@ def migrate(db):
         INSERT OR IGNORE INTO schema_version VALUES(3);
     """)
 
+    from agent_service.calls.instructions import migrate as migrate_instructions
+
+    migrate_instructions(db)
+
 
 def question_view(row):
     result = dict(row)
@@ -55,11 +60,12 @@ class LiveStore:
         return (
             row["status"] == "connected"
             and not row["stop_requested"]
+            and conditions_ready(db, call)
             and bool(
                 db.execute(
                     "SELECT 1 FROM call_delegations WHERE call_id=? AND id=? "
-                    "AND revision=? AND status='running'",
-                    (call, delegation, revision),
+                    "AND revision=? AND status='running' AND condition_revision=?",
+                    (call, delegation, revision, row["condition_revision"]),
                 ).fetchone()
             )
         )
@@ -72,7 +78,11 @@ class LiveStore:
         with self.db.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             row = self.calls._get(db, call)
-            if row["status"] != "connected" or row["stop_requested"]:
+            if (
+                row["status"] != "connected"
+                or row["stop_requested"]
+                or not conditions_ready(db, call)
+            ):
                 return None
             if db.execute(
                 "SELECT 1 FROM call_delegations WHERE call_id=? AND id=?", (call, delegation)
@@ -83,8 +93,10 @@ class LiveStore:
             ).fetchone()[0]
             self._cancel(db, call)
             db.execute(
-                "INSERT INTO call_delegations VALUES(?,?,?,'running',?)",
-                (call, delegation, revision, time.time()),
+                "INSERT INTO call_delegations "
+                "(call_id,id,revision,status,created_at,condition_revision) "
+                "VALUES(?,?,?,'running',?,?)",
+                (call, delegation, revision, time.time(), row["condition_revision"]),
             )
             self._event(db, call, "delegation_started", {"id": delegation, "revision": revision})
             return revision

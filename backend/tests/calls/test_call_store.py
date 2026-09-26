@@ -58,7 +58,7 @@ def test_migration_owner_dedup_and_single_global_slot(tmp_path):
     assert len(db.get_conversation(owner, cid)["messages"]) == 4
     db.initialize()
     with db.connection() as sql:
-        assert sql.execute("SELECT version FROM schema_version").fetchall()[0][0] == 3
+        assert sql.execute("SELECT version FROM schema_version").fetchall()[0][0] == 4
     assert calls.get(owner, a["id"])["status"] == "preparing"
 
 
