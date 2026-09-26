@@ -203,7 +203,7 @@ async def ending_bridge(monkeypatch):
         async def send(self, raw):
             await super().send(raw)
             e = json.loads(raw)
-            if e["type"].endswith(".append"):
+            if e["type"].endswith(".append") and "event_id" in e:
                 await self.input.put({"type": e["type"] + "ed", "client_event_id": e["event_id"]})
 
     class Media:
@@ -397,3 +397,145 @@ async def test_blocked_mark_send_does_not_disable_hangup_deadline(ending_bridge)
     clock[0] = 126
     await asyncio.wait_for(asyncio.shield(finish), 0.5)
     assert bridge.ending["status"] == "playback_unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_completion_review_waits_for_quiet_new_context_and_has_a_budget(monkeypatch):
+    from types import SimpleNamespace
+
+    from agent_service.calls import live_bridge
+
+    clock = [100.0]
+    monkeypatch.setattr(live_bridge, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    seen = []
+
+    class Coordinator:
+        async def review_completion(self, version):
+            seen.append(version)
+            return True
+
+    b = live_bridge.LiveBridge(None)
+    b.coordinator = Coordinator()
+    b.transcripts = [{"role": "caller", "text": "네"}, {"role": "assistant", "text": "감사합니다"}]
+    b.transcript_version = 2
+    assert not await b.review_tick()  # Too early after connecting.
+    clock[0] = 111
+    b.last_input_sound = 110
+    assert not await b.review_tick()  # Caller speaking.
+    clock[0] = 114
+    assert await b.review_tick()
+    clock[0] = 130
+    assert not await b.review_tick()  # Same transcript never repeats.
+    b.transcript_version = 3
+    b.pending_voice = 1
+    assert not await b.review_tick()
+    b.pending_voice = 0
+    b.last_review_at = 125
+    assert not await b.review_tick()  # Ten-second rate limit.
+    b.last_review_at = 110
+    assert await b.review_tick()
+    b.transcript_version = 4
+    b.review_count = 12
+    clock[0] = 200
+    assert not await b.review_tick()
+    assert seen == [2, 3]
+
+
+@pytest.mark.asyncio
+async def test_end_cancellation_is_audited_without_transcript_or_summary(ending_bridge):
+    from types import SimpleNamespace
+
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    events = []
+
+    async def db(method, *args):
+        events.append(args)
+
+    bridge.coordinator = SimpleNamespace(db=db, store=SimpleNamespace(event=None), call_id="test")
+    clock[0] = 101
+    await media.input.put(
+        {"event": "media", "media": {"payload": base64.b64encode(b"\xaa" * 160).decode()}}
+    )
+    await until(lambda: bool(events))
+    assert bridge.ending is None
+    assert events == [("test", "end_canceled", {"reason": "caller_audio_resumed"})]
+
+
+@pytest.mark.asyncio
+async def test_canceled_farewell_is_reviewed_then_new_farewell_drains(ending_bridge, tmp_path):
+    from test_live_store import setup_live
+    from test_native_audio import until
+
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    _, calls, store, owner, call = setup_live(tmp_path)
+
+    async def runner(context, tools):
+        assert context["completion_review"]
+        await tools[0].ainvoke({"reason": "goal_achieved", "summary": "합성 추가 확인 완료"})
+        return "확인 감사합니다. 안녕히 계세요."
+
+    c = DelegationCoordinator(calls, call, bridge, runner=runner)
+    bridge.coordinator = c
+    try:
+        clock[0] = 101
+        await media.input.put(
+            {"event": "media", "media": {"payload": base64.b64encode(b"\xaa" * 160).decode()}}
+        )
+        await until(lambda: bridge.ending is None)
+        bridge.transcripts = [
+            {"role": "caller", "text": "네, 추가 확인도 됐어요."},
+            {"role": "assistant", "text": "감사합니다."},
+        ]
+        bridge.transcript_version = 2
+        clock[0] = 114
+        assert await bridge.review_tick()
+        await c.task
+        assert bridge.ending["status"] == "waiting_for_playback"
+        await audio(b"\xaa" * 160)
+        await ack()
+        clock[0] = 117
+        await asyncio.wait_for(bridge.finish(), 1)
+        assert bridge.report()["end_call"]["status"] == "audio_drained"
+        kinds = [e["kind"] for e in store.activity(owner, call)["events"]]
+        for kind in (
+            "end_canceled",
+            "end_tool_requested",
+            "end_requested",
+            "completion_review_finished",
+            "end_playback_finished",
+        ):
+            assert kind in kinds
+    finally:
+        await c.close()
+
+
+@pytest.mark.asyncio
+async def test_speech_during_end_diagnostic_write_still_cancels_hangup(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    await audio(b"\xaa" * 160)
+    await ack()
+    reached, release = asyncio.Event(), asyncio.Event()
+
+    async def audit(kind, content):
+        if kind == "end_playback_finished":
+            reached.set()
+            await release.wait()
+
+    bridge.audit = audit
+    clock[0] = 103
+    finish = asyncio.create_task(bridge.finish())
+    tasks.append(finish)
+    await reached.wait()
+    await media.input.put(
+        {"event": "media", "media": {"payload": base64.b64encode(b"\xaa" * 160).decode()}}
+    )
+    await until(lambda: bridge.ending is None)
+    release.set()
+    await asyncio.sleep(0.15)
+    assert not finish.done()

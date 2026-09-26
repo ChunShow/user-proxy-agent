@@ -30,6 +30,10 @@ class LiveBridge:
         self.send_lock, self.phone_lock = asyncio.Lock(), asyncio.Lock()
         self.pending, self.marks = {}, {}
         self.transcripts = []
+        self.transcript_version = self.input_revision = 0
+        self.last_transcript_at = 0.0
+        self.reviewed_version = self.review_count = 0
+        self.last_review_at = 0.0
         self.coordinator = None
         self.input_bytes = self.sent_bytes = self.played_bytes = 0
         self.generated_bytes = 0
@@ -105,6 +109,9 @@ class LiveBridge:
                     "start_ms": event.get("start_ms"),
                     "end_ms": event.get("end_ms"),
                 }
+                if text.strip():
+                    self.transcript_version += 1
+                    self.last_transcript_at = time.monotonic()
                 self.transcripts.append(part)
                 self.transcripts = self.transcripts[-300:]
                 if role == "caller":
@@ -131,10 +138,12 @@ class LiveBridge:
                 raw = audio_bytes(event["media"]["payload"])
                 self.input_bytes += len(raw)
                 if has_sound(raw):
+                    self.input_revision += 1
                     self.last_input_sound = time.monotonic()
                     # A caller resuming during farewell cancels the automatic hangup.
                     if self.ending and time.monotonic() > self.ending["requested_at"] + 0.5:
                         self.ending = None
+                        await self.audit("end_canceled", {"reason": "caller_audio_resumed"})
                 await self.send(
                     {"type": "session.input_audio.append", "audio": event["media"]["payload"]}
                 )
@@ -227,6 +236,7 @@ class LiveBridge:
             "requested_at": time.monotonic(),
             "heard_output": False,
         }
+        await self.audit("end_requested", {"reason": reason})
         await self.command(
             "session.thinking.append", "백엔드 확인이 끝났습니다. 사용자 답변 대기를 마칩니다."
         )
@@ -283,7 +293,72 @@ class LiveBridge:
                     "output_quiet_ms": round(quiet_output * 1000),
                     "input_quiet_ms": round(quiet_input * 1000),
                 }
+                await self.audit(
+                    "end_playback_finished", {"status": end["status"], **end["playback"]}
+                )
+                # Saving diagnostics yields to incoming audio. Recheck before exiting.
+                if self.ending is not end:
+                    continue
+                if drained and (
+                    self.pending_voice
+                    or has_sound(self.buffer)
+                    or self.played_bytes < self.voice_end_bytes
+                    or time.monotonic()
+                    - max(self.last_input_sound, self.last_output_sound, self.last_generated_sound)
+                    <= 2
+                ):
+                    end["status"] = "waiting_for_playback"
+                    continue
                 return
+
+    async def audit(self, kind, content):
+        if self.coordinator:
+            try:
+                await self.coordinator.db(
+                    self.coordinator.store.event, self.coordinator.call_id, kind, content
+                )
+            except Exception:
+                pass  # Diagnostics must not break audio or direct hangup.
+
+    async def review_tick(self):
+        now = time.monotonic()
+        if (
+            not self.coordinator
+            or self.ending
+            or self.review_count >= 12
+            or self.transcript_version <= self.reviewed_version
+            or now - self.started_at < 10
+            or now - self.last_review_at < 10
+            or now
+            - max(
+                self.last_input_sound,
+                self.last_output_sound,
+                self.last_generated_sound,
+                self.last_transcript_at,
+            )
+            < 3
+            or self.pending_voice
+            or has_sound(self.buffer)
+            or not any(p["role"] == "caller" and p["text"].strip() for p in self.transcripts)
+            or not any(p["role"] == "assistant" and p["text"].strip() for p in self.transcripts)
+        ):
+            return False
+        version = self.transcript_version
+        accepted = await self.coordinator.review_completion(version)
+        if accepted:
+            self.reviewed_version = version
+            self.review_count += 1
+            self.last_review_at = now
+        return accepted
+
+    async def review(self):
+        while True:
+            await asyncio.sleep(0.5)
+            try:
+                await self.review_tick()
+            except Exception:
+                # Backoff transient store errors without disrupting the media tasks.
+                self.last_review_at = time.monotonic()
 
     async def save_progress(self, *, force=False):
         if not self.coordinator:
@@ -311,6 +386,8 @@ class LiveBridge:
             await self.save_progress()
 
     async def _clear_output(self, *, interrupted=False):
+        if self.ending and self.ending["status"] == "waiting_for_playback":
+            await self.audit("end_canceled", {"reason": "output_cleared"})
         async with self.phone_lock:
             self.output_epoch += 1
             self.ending = None
@@ -339,7 +416,15 @@ class LiveBridge:
         self.media = media
         tasks = [
             asyncio.create_task(f())
-            for f in (self.phone, self.receive, self.play, self.greet, self.finish, self.progress)
+            for f in (
+                self.phone,
+                self.receive,
+                self.play,
+                self.greet,
+                self.finish,
+                self.progress,
+                self.review,
+            )
         ]
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

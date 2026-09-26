@@ -409,3 +409,76 @@ async def test_connected_calendar_delegation_shares_only_busy_intervals(tmp_path
     await coordinator.close()
     assert len(results[0]["busy"]) == 1 and results[0]["available"] is False
     assert "CONFIDENTIAL" not in str(results) and "PRIVATE" not in str(results)
+
+
+@pytest.mark.asyncio
+async def test_quiet_completion_review_has_only_end_tool_and_drops_stale_speech(tmp_path):
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, store, owner, call = setup_live(tmp_path)
+    entered, release = asyncio.Event(), asyncio.Event()
+    ended = []
+
+    class Bridge:
+        transcripts = [
+            {"role": "caller", "text": "네 확인했습니다."},
+            {"role": "assistant", "text": "감사합니다."},
+        ]
+        transcript_version = 2
+        input_revision = 1
+        ending = None
+
+        async def end_call(self, *args, **kwargs):
+            ended.append(args)
+
+    async def run(context, tools):
+        assert context["completion_review"] is True
+        assert [t.name for t in tools] == ["end_call"]
+        await tools[0].ainvoke({"reason": "goal_achieved", "summary": "확인 완료"})
+        entered.set()
+        await release.wait()
+        return "확인했습니다."
+
+    bridge = Bridge()
+    coordinator = DelegationCoordinator(calls, call, bridge, runner=run)
+    assert await coordinator.review_completion(2) is True
+    await entered.wait()
+    bridge.input_revision += 1  # Caller resumed while backend judgment was running.
+    release.set()
+    await coordinator.task
+    assert not ended
+    assert any(
+        e["kind"] == "completion_review_discarded" for e in store.activity(owner, call)["events"]
+    )
+    bridge.transcript_version += 1
+    assert await coordinator.review_completion(3) is True
+    await coordinator.task
+    assert len(ended) == 1
+    await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_completion_review_does_not_replace_pending_user_confirmation(tmp_path):
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, store, owner, call = setup_live(tmp_path)
+
+    class Bridge:
+        transcripts = [{"role": "caller", "text": "가능한가요?"}]
+        ending = None
+
+        async def command(self, *args):
+            pass
+
+    async def run(context, tools):
+        await next(t for t in tools if t.name == "ask_user").ainvoke(
+            {"question": "가능한가요?", "options": ["네", "아니요"]}
+        )
+        return "확인"
+
+    c = DelegationCoordinator(calls, call, Bridge(), runner=run)
+    await c.request("d-question")
+    await until(lambda: bool(store.activity(owner, call)["questions"]))
+    assert await c.review_completion(1) is False
+    assert store.activity(owner, call)["questions"][0]["status"] == "pending"
+    await c.close()
