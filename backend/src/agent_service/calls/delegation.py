@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from agent_service.calls.instructions import InstructionStore
 from agent_service.calls.live_store import LiveStore
 from agent_service.integrations.tools import build_delegation_app_tools
+from agent_service.observability import correlation, trace_execution
 from agent_service.settings import load_settings
 from agent_service.storage import StoreError
 
@@ -76,11 +77,17 @@ async def run_delegation(context, tools):
             http_async_client=client,
         )
         agent = build_agent(model, call_tools=tools, system_prompt=PROMPT)
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": json.dumps(context, ensure_ascii=False)}]},
-            config={"recursion_limit": 12},
-        )
-        return final_reply(result["messages"])
+        kind = "call-completion-review" if context.get("completion_review") else "call-delegation"
+        with trace_execution(kind, settings.model_name, [t.name for t in tools]) as callbacks:
+            result = await agent.ainvoke(
+                {
+                    "messages": [
+                        {"role": "user", "content": json.dumps(context, ensure_ascii=False)}
+                    ]
+                },
+                config={"recursion_limit": 12, "callbacks": callbacks},
+            )
+            return final_reply(result["messages"])
 
 
 class DelegationCoordinator:
@@ -324,7 +331,10 @@ class DelegationCoordinator:
                 tools = [end_call] if review else [ask_user, send_dtmf, end_call]
                 if self.integrations and review is None:
                     tools += build_delegation_app_tools(self.integrations, row["owner_id"], valid)
-                result = await self.runner(context, tools)
+                with correlation(
+                    row["conversation_id"], row["source_user_message_id"], self.call_id
+                ):
+                    result = await self.runner(context, tools)
                 async with self.control_lock:
                     if await valid():
                         if end_request and end_input_revision != getattr(

@@ -18,6 +18,7 @@ from langchain_openai import ChatOpenAI
 from agent_service.actions.tools import action_history, build_action_tools
 from agent_service.calls.tools import CallContext, build_call_tools, call_history
 from agent_service.integrations.tools import build_integration_tools
+from agent_service.observability import trace_execution
 from agent_service.settings import Settings
 
 # Graph steps include middleware as well as model/tool work. Leave room for
@@ -98,11 +99,11 @@ def visible_text(chunk) -> str:
     )
 
 
-async def stream_agent(agent, messages: list[dict]) -> AsyncIterator[str]:
+async def stream_agent(agent, messages: list[dict], *, callbacks=None) -> AsyncIterator[str]:
     stream = agent.astream(
         {"messages": messages},
         stream_mode="messages",
-        config={"recursion_limit": AGENT_RECURSION_LIMIT},
+        config={"recursion_limit": AGENT_RECURSION_LIMIT, "callbacks": callbacks or []},
         subgraphs=False,
     )
     try:
@@ -143,11 +144,21 @@ async def stream_reply(
         prompt = (
             SYSTEM_PROMPT + " 현재 한국 시간: " + datetime.now(ZoneInfo("Asia/Seoul")).isoformat()
         )
-        stream = stream_agent(
-            build_agent(model, call_tools=call_tools, system_prompt=prompt), messages
+        identity = (
+            (call_context.conversation_id, call_context.source_user_message_id, None)
+            if call_context
+            else None
         )
-        try:
-            async for text in stream:
-                yield text
-        finally:
-            await stream.aclose()
+        with trace_execution(
+            "main-chat", settings.model_name, [t.name for t in call_tools], identity=identity
+        ) as callbacks:
+            stream = stream_agent(
+                build_agent(model, call_tools=call_tools, system_prompt=prompt),
+                messages,
+                callbacks=callbacks,
+            )
+            try:
+                async for text in stream:
+                    yield text
+            finally:
+                await stream.aclose()

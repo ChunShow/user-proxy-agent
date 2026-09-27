@@ -280,3 +280,33 @@ ClawOps에서 확인한다. 자세한 복구 원칙은 [통화 운영 문서](do
 
 직접 종료와 목표 달성 후 자동 종료는 실회선에서 확인했다. 사용자 피드백에 따라 음성 자연스러움·
 응답 지연 개선은 남아 있다. 현재 계측만으로 지연 원인은 특정하지 않았다.
+
+## 로컬 Langfuse 실행 기록
+
+`.env`에 `LANGFUSE_TRACING_ENABLED=1`, `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_KEY`,
+`LANGFUSE_SECRET_KEY`를 설정하고 백엔드를 다시 시작한다. 기본은 비활성이며 현재 구현은
+localhost/127.0.0.1/::1의 로컬 수집 서버만 허용한다. 잘못되거나 빠진 설정은 추적을 비활성화한다.
+키는 서버에만 보관하고 Git에 넣지 않는다. 로컬 서버가 꺼져 있으면 기존 Colima 환경에서
+`colima start`로 시작할 수 있다(다른 컨테이너도 기존 재시작 정책에 따라 시작될 수 있다).
+
+Langfuse에서 `main-chat`, `call-delegation`, `call-completion-review` 실행 아래의
+모델(GENERATION)·도구(TOOL) 이름, 시작/종료 시간, `completed`/`error`/`canceled`를 확인한다.
+동일 원 요청의 채팅·통화 위임은 같은 trace ID, 같은 대화는 같은 session ID로 연결한다.
+식별자는 내부 UUID에서 해시하며 전화번호·이메일은 넣지 않는다. 입력·출력·전사·오류 원문도
+수집하지 않는다. `completed`는 해당 모델/도구 실행의 반환을 뜻하며 예약 확정이나 통화 종료
+완료를 보증하지 않는다. 반환된 `error` 및 도구 예외는 오류로 표시한다.
+
+SDK가 백그라운드로 전송하고 수집 오류를 업무 실행에 전파하지 않는다. 수집 장애 중의 기록을
+로컬 디스크에 재전송용으로 보존하지 않으므로 누락될 수 있다. 전체 통화 수명/Live 음성 패킷,
+확인 카드에서 실행하는 Google 쓰기 작업 자체는 이번 추적 범위에 포함하지 않는다.
+
+발신·외부 모델 호출 없는 합성 DeepAgents 그래프 수집 검증:
+
+```bash
+cd backend
+uv run python ../scripts/check_langfuse_tracing.py --run
+```
+
+이 명령은 로컬 Langfuse에 합성 기록을 남기고 v2 observations API에서 저장·관계·원문 제외를
+확인한다. 현재 서버의 events_only 모드에서는 기존 trace 조회 API 대신 v2 observations를 쓴다.
+[구현·검증 기록](docs/superpowers/plans/2026-09-27-langfuse-tracing.md)을 참조한다.

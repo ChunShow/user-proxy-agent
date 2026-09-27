@@ -23,6 +23,7 @@ from agent_service.conversations import router as conversations_router
 from agent_service.integrations.google import GoogleManager
 from agent_service.integrations.logging import install_access_filter
 from agent_service.integrations.routes import router as integrations_router
+from agent_service.observability import shutdown_tracing
 from agent_service.session import router as session_router
 from agent_service.storage import ConversationStore, StoreError
 
@@ -54,6 +55,7 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         finally:
             await app.state.actions.shutdown()
             await app.state.calls.shutdown()
+            await run_in_threadpool(shutdown_tracing)
 
     app = FastAPI(title="user proxy agent", version="0.1.0", lifespan=lifespan)
     app.state.store = store
