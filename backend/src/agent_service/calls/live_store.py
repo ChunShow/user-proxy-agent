@@ -238,6 +238,43 @@ class LiveStore:
         if row:
             record_call_event(row, kind, content)
 
+    def transcript_evidence(self, owner, call):
+        """Bounded recent model deltas, not a recording or proof of listening."""
+        with self.db.connection() as db:
+            self.calls._get(db, call, owner)
+            rows = db.execute(
+                "SELECT id,content FROM call_activity WHERE call_id=? AND kind='transcript' "
+                "ORDER BY id DESC LIMIT 81",
+                (call,),
+            ).fetchall()
+        entries, remaining, truncated = [], 12000, len(rows) > 80
+        for row in rows[:80]:
+            if remaining == 0:
+                truncated = True
+                break
+            try:
+                part = json.loads(row["content"])
+            except (ValueError, TypeError):
+                truncated = True
+                continue
+            if not isinstance(part, dict) or not isinstance(part.get("text"), str):
+                truncated = True
+                continue
+            if part.get("role") not in ("caller", "assistant"):
+                truncated = True
+                continue
+            text = part["text"]
+            if len(text) > remaining:
+                text, truncated = text[-remaining:], True
+            entries.append({"id": row["id"], "role": part["role"], "text": text})
+            remaining -= len(text)
+        return {
+            "source": "model_transcript_deltas",
+            "listener_hearing_verified": False,
+            "entries": list(reversed(entries)),
+            "truncated": truncated,
+        }
+
     def activity(self, owner, call, after=0):
         with self.db.connection() as db:
             row = self.calls._get(db, call, owner)

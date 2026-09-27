@@ -164,3 +164,72 @@ async def test_main_chat_receives_confirmed_carrier_reason(tmp_path):
     assert saved[0]["error_code"] == "call_no_answer"
     assert saved[0]["status"] == "ended"
     assert "destination" not in saved[0]
+
+
+async def test_result_lookup_preserves_summary_time_and_returns_later_transcript(tmp_path):
+    from agent_service.calls.live_store import LiveStore
+
+    m, g, db, s, o, c, u = manager(tmp_path)
+    call = s.register(o, c, u, spec())["id"]
+    s.update(
+        call,
+        status="ended",
+        outcome="incomplete",
+        reported_summary="인사 전 판단",
+        end_report=json.dumps({"reason": "goal_achieved", "status": "audio_drained"}),
+    )
+    live = LiveStore(s)
+    live.event(call, "transcript", {"role": "caller", "text": "네 가능해요."})
+    live.event(call, "transcript", {"role": "assistant", "text": "감사합니다. 안녕히 계세요."})
+    ctx = CallContext(m, o, c, u)
+    result = await build_call_tools(ctx)[1].ainvoke({"call_id": call})
+    assert result["summary_timing"] == "end_request"
+    assert result["end_evidence"] == {"reason": "goal_achieved", "playback_status": "audio_drained"}
+    assert result["transcript"]["source"] == "model_transcript_deltas"
+    assert result["transcript"]["listener_hearing_verified"] is False
+    assert result["transcript"]["truncated"] is False
+    assert [e["text"] for e in result["transcript"]["entries"]] == [
+        "네 가능해요.",
+        "감사합니다. 안녕히 계세요.",
+    ]
+    records = await call_history(ctx)
+    assert "audio_drained" in records and "end_request" in records
+    other = build_call_tools(CallContext(m, "other", c, u))
+    assert (await other[1].ainvoke({"call_id": call}))["error"] == "not_found"
+    assert g.dials == 0
+
+
+async def test_result_lookup_bounds_recent_transcript_and_marks_omitted_history(tmp_path):
+    from agent_service.calls.live_store import LiveStore
+
+    m, g, db, s, o, c, u = manager(tmp_path)
+    call = s.register(o, c, u, spec())["id"]
+    live = LiveStore(s)
+    for i in range(85):
+        live.event(call, "transcript", {"role": "caller", "text": str(i)})
+    live.event(call, "audio_progress", {"not_transcript": "exclude"})
+    lookup = build_call_tools(CallContext(m, o, c, u))[1]
+    result = (await lookup.ainvoke({"call_id": call}))["transcript"]
+    assert len(result["entries"]) == 80
+    assert result["entries"][0]["text"] == "5"
+    assert result["entries"][-1]["text"] == "84"
+    assert result["truncated"] is True
+    for _ in range(3):
+        live.event(call, "transcript", {"role": "assistant", "text": "가" * 8000})
+    result = (await lookup.ainvoke({"call_id": call}))["transcript"]
+    assert sum(len(e["text"]) for e in result["entries"]) <= 12000
+    assert result["truncated"] is True
+    assert g.dials == 0
+
+
+@pytest.mark.parametrize(
+    "raw", ["{bad", "null", "[]", '{"status":"unknown","reason":["goal_achieved"]}']
+)
+async def test_result_lookup_treats_invalid_end_evidence_as_unknown(tmp_path, raw):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    call = s.register(o, c, u, spec())["id"]
+    s.update(call, status="ended", end_report=raw)
+    result = await build_call_tools(CallContext(m, o, c, u))[1].ainvoke({"call_id": call})
+    assert result["end_evidence"] == {"reason": None, "playback_status": None}
+    assert result["transcript"]["entries"] == []
+    assert g.dials == 0
