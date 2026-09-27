@@ -48,6 +48,7 @@ AI 모델에 전달되므로 그 점을 고려해 연결한다. 첨부 파일은
 수정/삭제·첨부 파일은 아직 지원하지 않는다. 실행안은 30분 뒤 만료되고 수정은 취소 후 새 요청으로 한다.
 
 결과를 확인하지 못했거나 실행 중 서버가 재시작되면 **실행 여부 확인 필요**로 표시하며 재전송하지 않는다.
-Google에서 실제 등록/발송 여부를 먼저 확인한다. 이 기능은 모사 Google API로 검증했으며 실제 쓰기는 미검증이다.
+Google에서 실제 등록/발송 여부를 먼저 확인한다. 모사 Google API 검사에 더해 2026-09-27 실제 웹에서
+테스트 일정 1건 등록·본인 메일 1건 발송/수신·새로고침 복원을 확인했다. 장애 경로는 모사 검증 범위다.
 공식 문서: [Calendar 등록](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert),
 [Gmail 발송](https://developers.google.com/workspace/gmail/api/guides/sending).
