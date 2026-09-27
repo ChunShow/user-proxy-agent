@@ -1,28 +1,28 @@
-# user proxy agent
+# User Proxy Agent
 
-사용자가 채팅으로 일을 맡기면 실제 앱과 전화로 처리하고, 진행 중인 통화를 읽거나
-들으며 추가 지시·종료로 개입할 수 있는 개인 비서 서비스.
+채팅으로 요청하면 일정·메일을 확인하고 전화를 걸어 처리하는 개인용 로컬 웹 서비스.
+통화 중에는 실시간 전사를 읽거나 양쪽 음성을 듣고, 추가 지시를 보내거나 직접 종료할 수 있다.
 
-현재는 텍스트 채팅, GPT-Live 통화, 실시간 전사·브라우저 듣기, 채팅 추가 지시,
-Google Calendar/Gmail 조회와 확인 후 일정 등록·메일 발송까지 구현했다.
-메인 입력은 텍스트 채팅이며 통화 모델은 `gpt-live-1`, 업무 판단은 설정된 텍스트 모델의 DeepAgents가 맡는다.
-로컬 기본 모델은 `gpt-5.6-sol`이다. 음성 연결에 별도 STT/TTS를 붙이지 않는다.
+## 현재 기능
 
-Google 연결 코드는 준비됐지만 실제 사용은 [Google 설정 안내](docs/google-setup.md)에 따라
-OAuth 클라이언트 등록과 본인 로그인·동의를 마쳐야 한다. 자격증명은 아직 등록하지 않았다.
-이후 앱 연결에서 등록·발송을 별도로 허용하고, 대화 아래 확인 카드에서 매번 실행한다.
-서버 시작·새로고침·상태 확인으로 새 전화나 외부 쓰기를 실행하지 않는다.
+- DeepAgents 기반 스트리밍 채팅, 마크다운, 응답 중단·재시도
+- 대화 저장·전환·이름 변경·삭제, 첫 응답 이후 자동 제목 생성
+- ClawOps와 GPT-Live의 직접 음성 연결, ARS 다이얼, 끼어들기 처리와 자동 종료
+- 통화 중 채팅 질문·답변과 추가 지시, 종료 후 결과 자동 보고
+- Google Calendar·Gmail 조회, 사용자 확인 후 일정 등록·메일 발송
+- 선택적 로컬 Langfuse 실행 추적
 
-기존 실통화에서 웹 답변·추가 지시의 음성 반영을 확인했다. 이번 자율 작업의 Google 연동,
-브라우저 듣기와 자동 종료 보조 점검은 모사 공급자·합성 음성으로 검증했다.
-새 버전의 실제 Google 동작과 실회선 청취·자동 종료는 아직 검증하지 않았다.
+메인 채팅과 업무 판단은 설정한 텍스트 모델이, 전화 음성 대화는 `gpt-live-1`이 맡는다.
+Live가 업무 판단을 DeepAgents에 위임하며, 별도 STT/TTS 서비스는 붙이지 않는다.
 
-## 설치
+본인 계정과 통화로 주요 흐름을 검증했다. 한국어 대화의 반복 질문·자연스러움과 응답 지연은
+개선 중이다. [최근 음성 평가](docs/evaluations/2026-09-27-korean-dialogue.md)와
+[단계별 검증 범위](docs/roadmap.md)에 확인된 동작과 남은 제한을 기록했다.
 
-Python 3.12 이상, uv, Node.js 24 LTS 권장(24–26 지원), npm이 필요하다.
-Python은 `backend/.python-version`, Node는 `.node-version`에 권장 버전을 기록했다.
+## 시작하기
 
-프로젝트 루트에서 처음 한 번 실행한다.
+Python **3.12**, uv, Node.js **24 LTS**(24–26 지원), npm을 사용한다.
+전화 없는 음성 평가의 합성 입력 생성은 macOS의 Yuna 음성을 사용한다.
 
 ```bash
 cd backend
@@ -30,362 +30,65 @@ uv sync --locked
 cd ../web
 npm ci
 cd ..
+
+# 최초 설치에만 복사. 기존 .env는 유지한다.
+test -f .env || cp .env.example .env
+chmod 600 .env
 ```
 
-의존성은 `backend/uv.lock`과 `web/package-lock.json`으로 고정한다.
-형제 프로젝트의 가상환경이나 코드에 의존하지 않는다.
-
-## 모델 설정
-
-프로젝트 루트의 `.env`에서 모델 설정을 읽는다. 처음 설치하는 환경에서는 `.env.example`을
-복사한 뒤 `MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL_NAME`을 입력한다. 기존 `.env`는 덮어쓰지 않는다.
-현재 로컬 `.env`에는 사용자 승인으로 이전 텍스트 모델 설정을 복사했으며 모델은 `gpt-5.6-sol`이다.
-키 파일은 권한 0600, Git 제외 상태다. 키 값을 브라우저에 전달하지 않는다.
-
-- `MODEL_BASE_URL`: OpenAI 호환 Chat Completions API의 base URL.
-- `MODEL_API_KEY`: 해당 API 키. `VITE_` 접두어를 사용하지 않는다.
-- `MODEL_NAME`: 공급자가 받는 모델 이름.
-- `MODEL_MAX_TOKENS`: 기본 2048, 양의 정수.
-- `MODEL_TRUST_ENV`: HTTP 프록시 환경변수 사용 여부(1/0). 현재 로컬은 기존 gateway에 직접 연결하는 0이다.
-
-프로세스 환경변수가 파일보다 우선하며, `AGENT_SERVICE_ENV_FILE`로 명시한 파일을 사용할 수도 있다.
-다른 프로젝트의 설정은 자동으로 읽지 않는다. `.env` 변경은 다음 요청에 반영되고,
-프로세스 환경변수를 바꿀 때는 서버를 다시 시작한다. 서버 시작·health 확인에는 새 모델 호출이나 발신이 없다.
-시작 시 이전의 미종료 회선이 있으면 상태 조회·종료 정리만 수행한다.
-설정이 빠져도 서버는 시작되며, 메시지를 보낼 때 설정 오류를 표시한다.
-
-모델은 공식 `deepagents==0.7.19`와 `langchain-openai==1.6.6`으로 연결한다.
-메인 모델에는 전화 시작·조회·종료·추가 지시, 앱 연결 조회, Calendar 목록·일정 조회,
-Gmail 검색·본문 읽기와 일정/메일 실행안 제안 도구를 제공한다. 셸·파일·하위 에이전트 도구는 없다.
-실행안의 승인·발송/등록은 웹 버튼과 서버에서 처리하며 모델에 승인 도구를 주지 않는다.
-Live는 client delegation으로 DeepAgents에 요청한다. 통화 업무 도구는 `ask_user`, `send_dtmf`,
-`end_call`, `check_calendar_availability`다. 일정 제목/메일 원문을 상대에게 자동 공개하지 않으며,
-연결/권한이 없거나 결과가 불확실하면 웹 채팅으로 요청자에게 확인한다.
-
-기존 `CALL_REALTIME_BASE_URL`과 `CALL_REALTIME_API_KEY`를 그대로 재사용한다.
-`CALL_AUDIO_MODE=live`, `CALL_LIVE_MODEL=gpt-live-1`, `CALL_LIVE_VOICE=marin`으로 활성화한다.
-Azure Live 경로는 `/openai/v1/live/sessions`이며 Realtime의 이벤트와 다르다.
-`CALL_AUDIO_MODE=realtime`은 기존 비교 경로다. 자동 폴백은 하지 않는다.
-
-통화 카드의 선택지를 누르거나 ‘직접 답변하기’를 누른 뒤 기존 입력창으로 답한다.
-답변 대상 표시는 일반 채팅과 구분되며, 해제하면 일반 대화로 돌아온다.
-질문과 답변은 새로고침 후 복원되고 기본 60초 후 마감된다. ‘전달됨’은 통화 모델이
-결과를 접수했다는 뜻이며 상대방이 들었다는 보장은 아니다. 일반 채팅을 자동으로 읽어주지 않는다.
-[구현·검증 기록](docs/superpowers/plans/2026-09-26-step-06-live-delegation.md)을 참고한다.
-
-## 통화 중 추가 요청
-
-같은 채팅의 Live 통화가 연결되어 있을 때 “가격도 물어봐”, “오후 6시로 바꿔서 확인해줘”처럼
-입력한다. 메인 에이전트가 명확한 통화 요청을 `update_phone_call` 도구로 전달한다.
-통화 카드에서 요청 내용과 전달 상태를 확인할 수 있고, 새로고침 후에도 복원된다.
-일반 질문은 채팅으로 답하며 대상·조건이 불분명하면 확인한다.
-
-‘통화 도우미에게 전달됨’은 모델의 수신 확인이다. 상대방이 듣거나 업무를 끝냈다는 뜻은 아니다.
-실패·미확인 지시는 자동으로 다시 보내지 않으며, 필요하면 사용자가 새 채팅 메시지로 요청한다.
-한 번에 1건, 한 통화에 최대 30건(건당 2,000자)을 지원한다. 발신 중·종료 중·종료된 통화와
-Realtime 비교 모드에는 보낼 수 없다. 지시 전달 중에도 직접 종료 버튼을 사용할 수 있다.
-[8단계 검증 기록](docs/superpowers/plans/2026-09-26-step-08-call-instructions.md)을 참고한다.
-
-## 통화 듣기와 자동 종료
-
-연결된 통화 카드에서 **통화 듣기**를 누른다. 상대방과 도우미 음성을 함께 들으며 마이크는 사용하지 않는다.
-듣기 중지·대화 전환은 청취만 멈추고 통화는 계속된다. 회선은 **통화 종료** 버튼으로 직접 종료한다.
-녹음 파일이나 접속 이전 음성 다시 듣기는 제공하지 않는다.
-
-Live의 종료 위임 외에, 새 전사가 있고 양쪽이 조용하면 DeepAgents가 완료 여부를 제한적으로 점검한다.
-사용자 질문/조건 전달 중에는 기다리고, 새 발화나 조건 변경은 오래된 판단을 무효화한다.
-모델이 종료를 요청하면 마지막 인사 음성의 송신·재생 확인 후 회선 종료를 요청한다.
-[통화 동작·진단·검증 한계](docs/calls.md)를 참고한다.
-
-## 실행
+`.env`에 `MODEL_BASE_URL`, `MODEL_API_KEY`, `MODEL_NAME`을 입력한 뒤 실행한다.
+키를 `VITE_` 변수나 웹 코드에 넣지 않는다.
 
 ```bash
 ./scripts/dev.sh
 ```
 
 - 웹: http://127.0.0.1:5180
-- 통화 화면 예시: http://127.0.0.1:5180/?preview=call
-- 백엔드 health: http://127.0.0.1:9010/api/health
-- 웹 프록시 health: http://127.0.0.1:5180/api/health
+- 백엔드 상태: http://127.0.0.1:9010/api/health
+- 종료: 실행한 터미널에서 Ctrl-C
 
-두 health 주소는 `{"status":"ok","service":"agent-service"}`를 반환한다.
-이는 웹↔서버 연결만 확인하며 외부 모델이나 통화 공급자의 연결 상태를 뜻하지 않는다.
-화면을 열거나 우측 상단 서버 상태 버튼을 누를 때 요청한다. 주기적인 자동 감시는 하지 않는다.
+상태 확인은 로컬 서버 연결만 검사한다. 모델·전화·Google 연결 상태를 보증하지 않는다.
+서버는 로컬 주소에만 바인딩하며, 공개 배포와 다중 사용자 로그인은 지원 범위 밖이다.
 
-메인 대화에서는 텍스트를 입력하고 Enter 또는 화살표 버튼으로 모델에 메시지를 보낸다.
-첫 화면은 안내와 입력창을 함께 보여 주고, 대화가 시작되면 입력창을 하단에 유지한다.
-Shift+Enter는 줄바꿈이며 한글 조합 중 Enter로는 전송하지 않는다.
-응답 중에는 화살표가 중단 버튼으로 바뀐다. 다음 메시지를 작성할 수 있지만 응답 중에는 전송하지 않는다.
-중단·실패한 부분 응답은 표시를 남기며, 재시도는 같은 사용자 메시지에 새 응답을 생성한다.
-인증·설정·입력 오류는 설정이나 입력을 수정한 뒤 다시 보내야 한다.
-위로 스크롤해 읽을 때 자동으로 끌어내리지 않으며 ‘최신 메시지로’ 버튼으로 돌아올 수 있다.
-‘화면 예시’에서는 6가지 통화 상태, 내역 펼침, 듣기 전환, 추가 지시, 통화 종료를 살펴볼 수 있다.
-종료 버튼은 ‘종료 확인 중’으로 바꾸고, 예시 도구의 ‘종료 확인’을 눌러야 종료 상태가 된다.
-듣기는 화면 상태만 바꾸며 실제 소리는 재생하지 않는다.
+## 전화와 앱 연결
 
-메시지와 완료된 응답은 다음 모델 요청의 문맥으로 전달한다. 실패·중단된 부분 응답과 예시 대화는 제외한다.
-대화와 응답 상태는 서버의 `data/agent-service.sqlite3`에 저장한다. 사이드바의 ‘새 대화’로
-새로 시작하고 이전 대화를 선택해 이어간다. URL의 대화 ID로 새로고침과 뒤로/앞으로 이동도 복원한다.
-이전 메시지는 50개씩 불러오며 ‘이전 메시지 더 보기’를 눌러도 읽던 위치를 유지한다.
-전송하지 않은 초안과 통화 예시 상태는 탭 메모리에만 있다. 초안은 대화별·예시별로 구분하며 새로고침하면 사라진다.
-대화 전환·예시 이동·새로고침·탭 닫기는 진행 중 응답을 중단한다. 복원만으로 모델 요청을 재실행하지 않는다.
-정상 중단은 받은 부분까지 저장하고, 강제 종료는 마지막 DB 저장분을 ‘연결이 끊겨 응답이 중단되었습니다’로 복원한다.
-다른 탭에서 응답 중인 대화는 새 전송을 막고 ‘다시 불러오기’로 상태를 확인한다.
-브라우저에서 응답을 중단하면 해당 텍스트 생성과 공급자 연결을 닫는다. 실제 통화는 계속된다. 공급자 내부 처리·과금 취소까지 보장하지는 않는다.
-메인/예시 화면을 오갈 때 초안은 유지하고, 다른 통화 상태 예시를 선택하면 예시에 추가한 메시지는 초기화한다.
-‘추가 지시’는 입력창의 대상을 지정한다. 메시지 추가 또는 대상 해제로 일반 대화로 돌아온다.
+채팅만 사용할 때는 `.env.example`의 `CALLS_ENABLED=0`을 유지한다.
+전화 사용 시 ClawOps 계정·키·발신번호, 음성 모델 주소·키, 허용 수신번호를 설정한다.
+번호와 목적을 포함한 명확한 발신 요청을 채팅으로 전달한다.
 
-검토한 실제 저장 대화: [데스크톱](docs/verification/step-04-desktop-chat.png),
-[모바일](docs/verification/step-04-mobile-chat.png), [대화 목록](docs/verification/step-04-mobile-list.png).
-통화 화면은 [데스크톱 예시](docs/verification/step-02-refined-desktop-call.png),
-[모바일 예시](docs/verification/step-02-refined-mobile-call.png)다.
-표시 이름은 `user proxy agent`이며, 내부 디렉터리·패키지·health API 식별자는 `agent-service`를 유지한다.
+통화 중 **통화 듣기**는 양쪽 음성을 재생하고, **통화 종료**는 실제 회선 종료를 요청한다.
+듣기 중지나 채팅 화면 이동만으로 통화가 끝나지는 않는다. 서비스는 한 번에 한 통화를 처리한다.
+Google은 본인 OAuth 설정과 웹의 계정 동의가 필요하다. 일정 등록과 메일 발송은
+모델이 제안한 내용을 확인 카드에서 검토한 뒤 실행한다.
 
-## 저장 위치와 접근 범위
+- [모델·Google·Langfuse 설정](docs/configuration.md)
+- [Google OAuth 설치 안내](docs/google-setup.md)
+- [통화 운영·상태·진단](docs/calls.md)
+- [로컬 실행·백업·복구](docs/local-recovery.md)
 
-현재는 **로그인 없이 브라우저별로 구분하는 로컬 서비스**다. HttpOnly 쿠키로 30일간 같은
-브라우저 프로필·호스트의 대화를 찾는다. 다른 브라우저/시크릿 창은 별도 공간이며, 서버가 모든 대화 접근의 소유권을 확인한다.
-쿠키 삭제·만료 후 기존 대화 복구와 기기 간 동기화는 아직 지원하지 않는다. localStorage에는 마지막 선택 ID만 저장한다.
-SQLite 파일·저널과 `.env`는 Git에서 제외한다. 세션 토큰은 해시만 DB에 저장하지만 대화 본문은 로컬 파일의 평문이다.
-DB 디렉터리 권한은 0700, 파일은 0600이다. 백엔드 단일 프로세스를 사용한다.
-`AGENT_SERVICE_DATABASE_PATH` 프로세스 환경변수로 별도 DB 경로를 지정할 수 있다. 자동 테스트는 임시 DB를 사용한다.
-DB를 복사해 보관할 때는 서버를 정상 종료한 뒤 `data/` 전체를 보관한다. DB만으로 브라우저 쿠키를 복원하지는 못한다.
-
-## 서버 종료와 포트 변경
-
-연결 오류, 중단 작업의 상태, 백업과 재실행 판단은 [로컬 복구 안내](docs/local-recovery.md)를 따른다.
-
-Ctrl-C로 두 서버를 함께 종료한다. 하나가 종료되면 나머지도 정리한다.
-포트가 이미 사용 중이면 이유를 출력하고 종료하며 기존 프로세스는 건드리지 않는다.
-코드 수정 시 웹은 자동 갱신되고, 백엔드는 개발 스크립트를 다시 실행한다.
-
-포트 변경은 프로세스 환경변수로 지정한다. 모델용 `.env`의 포트 값은 읽지 않는다.
-
-```bash
-BACKEND_PORT=9011 WEB_PORT=5181 ./scripts/dev.sh
-```
-
-백엔드 중단 시 웹의 오류 표시를 직접 확인하려면 두 터미널에서 따로 실행한다.
-
-```bash
-# 터미널 1: 프로젝트 루트에서
-cd backend
-uv run --locked uvicorn agent_service.main:app --host 127.0.0.1 --port 9010
-```
-
-```bash
-# 터미널 2: 프로젝트 루트에서
-cd web
-npm run dev
-```
-
-웹을 연 뒤 터미널 1을 Ctrl-C로 중단하고 서버 상태 버튼을 누르면 오류가 표시된다.
-백엔드를 다시 실행한 뒤 같은 버튼을 누르면 복구된다. 요청은 5초 후 시간초과된다.
-
-## 검증
+## 개발과 검증
 
 ```bash
 ./scripts/check.sh
 ```
 
-백엔드 계약·실제 개발 서버 수명 테스트, Ruff, 웹 요청 처리 테스트, TypeScript,
-ESLint, 프로덕션 빌드를 실행한다. 수명 테스트는 임시 로컬 포트에 서버를 실행하고 정리한다.
-검증 전 웹과 백엔드 의존성을 모두 설치해야 한다. 일반 검증은 모델을 모사하며 외부 API를 호출하지 않는다.
-`web/dist`는 빌드 결과물이다. 실제 배포의 `/api` 라우팅은 후속 배포 설계 대상이다.
+백엔드·웹 테스트, 정적 검사와 빌드를 실행한다. 로컬 `.env`를 배제하고 외부 모델·전화·Google을
+모사한다. 브라우저 검사와 유료 API 음성 평가는 [스크립트 안내](scripts/README.md)에서 구분한다.
 
-브라우저 회귀 검증은 별도로 실행한다.
+## 저장소 구조
 
-```bash
-cd web
-npx playwright install chromium  # 최초 한 번
-npm run test:e2e
-```
+| 경로 | 내용 |
+| --- | --- |
+| `backend/src/agent_service/` | 채팅, 통화, Google 연결, 확인 후 실행, 저장소 |
+| `backend/tests/` | 백엔드 자동 검사 |
+| `web/src/`, `web/e2e/` | React 화면과 웹 검사 |
+| `scripts/` | 로컬 실행, 검사, 합성 음성 평가 |
+| `docs/` | 운영 안내, 제품 방향, 계획·검증 기록 |
+| `.env.example` | 인증정보가 없는 설정 템플릿 |
+| `data/`, `var/`, `.env` | 사용자 데이터·평가 결과·인증정보, Git 제외 |
 
-이미 설치된 Google Chrome을 사용하려면 브라우저 설치 대신
-`PLAYWRIGHT_CHANNEL=chrome npm run test:e2e`로 실행한다. 이번 검증은 이 방식으로 진행했다.
-E2E 28개는 5193 포트에 독립 웹 서버를 띄운 뒤 정리하며 포트가 점유되어 있으면 실패한다.
-health·세션·대화 저장·chat 응답은 E2E에서 제어한다. 실제 모델과 브라우저 연결은 별도 smoke test로 확인했다.
-현재 자동 테스트는 backend 41개, 웹 API/스트림 17개, E2E 28개다.
-스크린샷과 실패 시 trace는 `web/test-results/`에 생성한다. 이 경로는 커밋에서 제외한다.
+이 디렉터리가 독립 저장소의 루트다. 이전 실험 프로젝트나 모델 다운로드 폴더는 실행에 필요하지 않다.
+잠금 파일 `backend/uv.lock`, `web/package-lock.json`을 함께 버전 관리한다.
 
-실제 모델 검증은 실행 중인 서버에 대해 아래 명령을 명시적으로 실행한다.
-합성 문장으로 한국어 응답·문맥·중단 후 새 요청을 확인하며 실제 모델 사용 비용이 발생한다.
-
-```bash
-backend/.venv/bin/python scripts/check_live_chat.py --run
-```
-
-통화 결과에서 일정·메일 확인 카드로 이어지는 모델 판단은 별도 합성 검증으로 반복할 수 있다.
-실제 텍스트 모델을 호출하므로 모델 사용 비용이 발생한다. 임시 DB와 가상 계정·통화 기록을
-사용하며 ClawOps/Google 네트워크 클라이언트는 연결하지 않는다. 제품 서버가 없어도 실행된다.
-
-```bash
-cd backend
-uv run python ../scripts/check_call_followup.py --run
-# 한 사례만 확인
-uv run python ../scripts/check_call_followup.py --run --case ambiguous_time
-```
-
-확정 시간의 실행안, 조회 전용 요청, 불명확한 시간의 세 사례를 확인한다. 출력의
-`synthetic_answer`와 메일 본문은 직접 검토해야 하며, 통과가 실제 통화·Google 실행 성공이나
-모델의 모든 응답을 보장하지는 않는다. [검증 기록](docs/superpowers/plans/2026-09-27-call-followup-validation.md).
-
-
-API 사용 시 먼저 `POST /api/session`에 `{}`를 보내 쿠키를 받고, 이후 같은 쿠키를 유지한다.
-`POST /api/conversations`에 클라이언트가 생성한 `conversation_id` UUID를 보내 대화를 만든다.
-`POST /api/chat`은 `{request_id, conversation_id, content}` 또는
-`{request_id, conversation_id, retry_message_id}`를 받고 start/delta/done/error SSE를 반환한다.
-같은 전송을 네트워크 재시도할 때 request_id를 유지한다. 이미 접수됐으면 409와 기존 ID를 반환하고 모델을 재실행하지 않는다.
-사용자의 명시적 ‘다시 시도’는 새 request_id와 마지막 응답의 retry_message_id를 사용한다.
-문맥은 서버가 저장 기록에서 선택한다. 최근 전체 턴 기준 최대 80개 메시지·60,000자이며,
-오래된 턴은 모델 입력에서 제외하지만 원문은 DB에 남긴다. 자동 요약과 DeepAgents 내부 실행 상태 복원은 하지 않는다.
-공급자 오류 원문은 전달하지 않는다. 전체 실행 한도는 120초다.
-전체 계약과 상태 전이는 [4단계 계획](docs/superpowers/plans/2026-09-25-step-04-conversation-storage.md)에 있다.
-계정 로그인·공개 배포·대화 검색/편집/삭제는 아직 구현하지 않았다.
-
-## 문서 읽기
-
-- [작업 지침](AGENTS.md): 단계별 계획·컨펌·구현 절차.
-- [제품 방향과 구조](docs/product.md): 합의한 경험, 구성요소의 책임, 기존 작업 재사용 범위.
-- [전체 로드맵](docs/roadmap.md): 12단계 순서와 단계별 완료 기준.
-- [1단계 세부 계획](docs/superpowers/plans/2026-09-25-step-01-foundation.md):
-  웹·백엔드 기본 구조의 구현 범위, 파일, 검증 방법.
-- [2단계 세부 계획](docs/superpowers/plans/2026-09-25-step-02-chat-design.md):
-  Muse·Grok Bot 레퍼런스, 채팅·통화 카드 구현 및 검증 기록.
-- [3단계 실제 채팅](docs/superpowers/plans/2026-09-25-step-03-live-chat.md):
-  모델 설정, SSE 계약, 중단·재시도와 실제 모델 검증 기록.
-- [4단계 대화 저장](docs/superpowers/plans/2026-09-25-step-04-conversation-storage.md):
-  SQLite·브라우저 세션·복원·중복 방지와 실제 모델 검증 기록.
-- [2단계 디자인 수정](docs/superpowers/plans/2026-09-25-step-02-design-refinement.md):
-  user proxy agent 이름, 장식을 줄인 메신저 화면, Impeccable 스킬 적용 기록.
-
-## 기존 작업과의 관계
-
-`../calling-agent/`의 ClawOps·Realtime 통화 구현과 검증 사례를 기반으로 한다.
-`../user_proxy_agent/`의 시나리오·대화 정책·평가 사례는 테스트 자산으로 참고한다.
-실서비스에는 실제 사용자가 채팅으로 참여한다.
-
-3단계에서 승인받은 텍스트 모델 설정만 새 `.env`에 복사했다. 원본은 변경하지 않았다.
-통화 키·녹음·앱 계정은 기존 디렉터리에 유지하며, 해당 단계의 승인된 계획에 따라 연결한다.
-
-## 실제 통화
-
-통화 설정은 `.env`의 `CALLS_ENABLED=1`, `CLAWOPS_ACCOUNT_ID`, `CLAWOPS_API_KEY`,
-`CLAWOPS_FROM_NUMBER`, `CALL_REALTIME_BASE_URL`, `CALL_REALTIME_API_KEY`, `CALL_REALTIME_MODEL`로 구성한다.
-`CALL_ALLOWED_NUMBERS`에 국내 번호를 쉼표로 구분하고 `CALL_MAX_SECONDS`는 1~180으로 지정한다.
-현재 로컬 설정은 승인받은 본인 테스트 번호 하나만 허용한다. 텍스트 모델 설정은 유지한다.
-
-채팅에 번호와 명확한 발신 요청, 목적·질문을 적는다. 예: “허용된 번호로 전화해서 지금 통화 가능한지
-물어보고 답을 재확인해 줘.” 접수된 통화는 사용자 메시지 아래에 나타난다. 다른 대화에서도 활성 통화로
-이동하거나 종료할 수 있다. 채팅 중단·새로고침·페이지 이동은 전화 종료가 아니다.
-
-발신 없이 계정·음성·소켓을 확인하려면:
-
-```bash
-backend/.venv/bin/python scripts/check_live_calls.py --preflight
-```
-
-명령행 실통화는 별도 `--run --to <허용 번호> --request-id <UUID>`를 명시해야 한다.
-같은 request ID의 세션을 Git 제외 var/에 보존하고 HTTP 채팅 경로로 요청한다.
-서버를 먼저 실행해야 하며, 이 옵션은 실제 발신과 과금이 발생할 수 있다. 자동 테스트에서는 사용하지 않는다.
-
-같은 발신번호를 기존 calling-agent 실험과 동시에 사용하지 않는다. 현재 서비스 전체에서 통화는 하나만
-진행한다. `unknown`이나 종료 미확인은 슬롯을 유지한다. 앱이 연결 여부를 모르는 상태에서 재발신하지 말고
-ClawOps에서 확인한다. 자세한 복구 원칙은 [통화 운영 문서](docs/calls.md)를 참조한다.
-
-실제 카드 디자인(합성 데이터): [데스크톱](docs/verification/step-05-desktop.png),
-[모바일](docs/verification/step-05-mobile.png).
-
-직접 종료와 목표 달성 후 자동 종료는 실회선에서 확인했다. 사용자 피드백에 따라 음성 자연스러움·
-응답 지연 개선은 남아 있다. 현재 계측만으로 지연 원인은 특정하지 않았다.
-
-## 로컬 Langfuse 실행 기록
-
-`.env`에 `LANGFUSE_TRACING_ENABLED=1`, `LANGFUSE_BASE_URL`, `LANGFUSE_PUBLIC_KEY`,
-`LANGFUSE_SECRET_KEY`를 설정하고 백엔드를 다시 시작한다. 기본은 비활성이며 현재 구현은
-localhost/127.0.0.1/::1의 로컬 수집 서버만 허용한다. 잘못되거나 빠진 설정은 추적을 비활성화한다.
-키는 서버에만 보관하고 Git에 넣지 않는다. 로컬 서버가 꺼져 있으면 기존 Colima 환경에서
-`colima start`로 시작할 수 있다(다른 컨테이너도 기존 재시작 정책에 따라 시작될 수 있다).
-
-Langfuse에서 `main-chat`, `call-delegation`, `call-completion-review` 실행 아래의
-모델(GENERATION)·도구(TOOL) 이름, 시작/종료 시간, `completed`/`error`/`canceled`를 확인한다.
-동일 원 요청의 채팅·통화 위임은 같은 trace ID, 같은 대화는 같은 session ID로 연결한다.
-식별자는 내부 UUID에서 해시하며 전화번호·이메일은 넣지 않는다. 입력·출력·전사·오류 원문도
-수집하지 않는다. `completed`는 해당 모델/도구 실행의 반환을 뜻하며 예약 확정이나 통화 종료
-완료를 보증하지 않는다. 반환된 `error` 및 도구 예외는 오류로 표시한다.
-
-SDK가 백그라운드로 전송하고 수집 오류를 업무 실행에 전파하지 않는다. 수집 장애 중의 기록을
-로컬 디스크에 재전송용으로 보존하지 않으므로 누락될 수 있다. 종료 단계는 `call.end_tool_requested`, `call.farewell_commands_acked`,
-`call.end_playback_finished`, `call.carrier_end_confirmed` 등의 관측으로 확인한다.
-재생 상태는 음성 활동과 ACK 기반의 추정이다. 실제 발화·청취 성공을 뜻하지 않는다.
-Live 음성 패킷과 확인 카드에서 실행하는 Google 쓰기 작업 자체는 추적 범위에 포함하지 않는다.
-
-발신·외부 모델 호출 없는 합성 DeepAgents 그래프 수집 검증:
-
-```bash
-cd backend
-uv run python ../scripts/check_langfuse_tracing.py --run
-```
-
-이 명령은 로컬 Langfuse에 합성 기록을 남기고 v2 observations API에서 저장·관계·원문 제외를
-확인한다. 현재 서버의 events_only 모드에서는 기존 trace 조회 API 대신 v2 observations를 쓴다.
-[구현·검증 기록](docs/superpowers/plans/2026-09-27-langfuse-tracing.md)을 참조한다.
-
-
-## 통화 결과 자동 보고
-
-새로 종료·실패·취소된 통화의 결과가 원래 대화에 한 번 자동으로 표시된다. 현재 메인 텍스트
-모델이 저장된 전사와 종료 근거를 요약하며 전화·일정·메일 실행 도구는 제공하지 않는다.
-통화 종료와 독립적으로 최대 30초 동안 생성하고, 오류나 생성 중 서버 중단은 고정 안내로 남긴다.
-생성 대기 작업은 재시작 후 처리하되 중단된 생성을 자동으로 반복하지 않는다.
-
-입력 중 초안과 채팅 응답을 보존하고 응답 작성 중에는 결과 표시를 완료 뒤로 미룬다.
-새로고침 후에도 같은 저장 메시지가 복원된다. 과거 종료 통화는 소급 보고하지 않는다.
-이 worker는 단일 backend 프로세스용이다. 실제 텍스트 모델·합성 통화·브라우저로 검증했으며,
-본인 실회선 1회에서도 자동 표시·새로고침 복원·중복 없음과 추적 연결을 확인했다.
-일반 `./scripts/check.sh`는 로컬 `.env`를 읽지 않는다.
-
-
-### 전화 없는 한국어 음성 비교
-
-기본 Live 지시는 끼어들기 양보, 절제된 맞장구, 일상적인 한국어 존댓말과 숫자 읽기를 포함한다.
-`CALL_LIVE_VOICE`는 `marin`(기본), `gleam`, `meridian`을 지원한다.
-음성의 한국어 선호도는 실제 청취로 비교해야 하며 기본 음성은 임의로 바꾸지 않았다.
-
-프로젝트 루트에서 Python 3.12/macOS의 Yuna로 합성 입력을 만들고 실제 Live API를 시험한다.
-각 `--run`은 유료 모델 세션 1회이며, ClawOps·Google에 연결하거나 전화를 걸지 않는다.
-
-```sh
-uv run --project backend python scripts/check_live_korean.py --prepare
-uv run --project backend python scripts/check_live_korean.py --run --name korean-baseline --prompt baseline
-uv run --project backend python scripts/check_live_korean.py --run --name korean-current --prompt current
-uv run --project backend python scripts/check_live_korean.py --run --name korean-gleam --voice gleam
-```
-
-`--scenario`는 `correction`, `backchannel`, `none`, `pause`, `repeat`;
-세션은 기본 42초, 최대 45초다. pause는 대기 후 계속, repeat는 연속 두 번 정정을 시험한다.
-같은 이름으로 덮어쓰지 않는다. `var/korean-live-lab/<name>/`에 입력/모델 원본/중계 출력 WAV,
-실제 적용 지시와 이벤트·전사·계측 JSON이 저장된다. `baseline`은 개선 전 지시의 고정본이고
-`current`는 실행 시 제품 지시다. `candidate`는 이번에 비교한 지시를 고정한 재현용이다.
-음성 출력은 실제 모델이 생성하지만 입력은 합성이고 회선 ACK·위임 답변은 모사다.
-저음량 구간과 전사는 자연스러움이나 의미 있는 양보의 확정 판정이 아니다.
-[이번 비교 결과와 제한](docs/research/2026-09-27-live-korean-experiment.md)을 참고한다.
-
-저장된 모델 도착 기록을 기존/현재 재생 방식으로 다시 비교할 수 있다. 아래 명령은
-API·전화·DB에 연결하지 않는다. Python 3.12의 별도 프로세스로 실행하며 원본 기록이 필요하다.
-
-```sh
-uv run --project backend python scripts/replay_live_audio.py
-```
-
-`var/korean-live-replay/`의 새 디렉터리에 전후 WAV·패킷 시각·공급 공백·추가 지연과
-전체 바이트 보존 여부를 저장한다. 이는 가상 수신 시계 검증이며 실제 ClawOps 재생의
-보장은 아니다. [중계 개선 결과와 지연 비용](docs/superpowers/plans/2026-09-27-live-playout-continuity.md)을 참고한다.
-
-Live 경로는 로컬 WebRTC VAD로 지속 발화를 감지하면 대기 음성을 clear하고 이전 출력을
-일시 폐기한다. 상대 발화와 이전 출력의 정지를 확인한 뒤 재생을 재개한다. STT/TTS를
-별도 호출하지 않는다. 명령 실패/복구 타임아웃은 오류로 처리하며 실제 회선의 중단 속도는
-추가 검증이 필요하다. [끼어들기 제어 결과·제한](docs/superpowers/plans/2026-09-27-live-barge-in-control.md).
-실험 결과의 `interventions`, `clear_latency_ms`, `dropped_audio_bytes`로 중단을 확인하고
-`conversation.wav`로 합성 입력과 실제 API 출력을 함께 듣는다. `playback-timeline.wav`는
-폐기 구간의 시간을 보존한다. `playback.wav`는 전송 바이트의 연속본이므로 시간 비교에 쓰지 않는다.
+[제품 방향](docs/product.md) · [로드맵](docs/roadmap.md) · [작업 지침](AGENTS.md) ·
+[저장소 업로드 범위](docs/repository.md)

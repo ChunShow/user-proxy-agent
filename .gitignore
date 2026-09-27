@@ -18,3 +18,31 @@ data/
 .DS_Store
 test-results/
 playwright-report/
+
+# Local backups and credentials, including copies outside data/ and var/.
+backups/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+*.pem
+*.key
+client_secret*.json
+credentials.json
+token.json
+
+# Raw/generated audio stays local; commit synthetic input text instead.
+*.wav
+*.aiff
+*.aif
+*.pcm
+*.ulaw
+*.mp3
+*.m4a
+*.ogg
+*.flac
