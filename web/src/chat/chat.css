@@ -291,15 +291,11 @@
 .conversation-items:has(details[open]) { padding-bottom: 108px; }
 
 /* A quiet wordmark and a directly manipulable edge. */
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; color: var(--ink); }
-.brand-mark { flex-shrink: 0; }
-.brand-wordmark { display: flex; flex-direction: column; gap: 1px; white-space: nowrap; }
-.brand-wordmark strong { font-size: 15px; line-height: 1.2; font-weight: 650; letter-spacing: -.025em; }
-.brand-wordmark > span { font-size: 12px; line-height: 1.3; color: var(--muted); }
+.brand { min-width: 0; color: var(--ink); font-size: 14px; line-height: 1.4; font-weight: 500; letter-spacing: -.015em; white-space: nowrap; }
 .sidebar-heading { padding-left: 8px; margin-bottom: 22px; }
 .nav-collapse { flex-shrink: 0; }
 .new-conversation { color: var(--ink); font-weight: 500; gap: 11px; }
-.new-conversation > svg { width: 21px; height: 21px; stroke-width: 1.7; }
+.new-conversation > svg { width: 20px; height: 20px; stroke-width: 1.6; }
 .sidebar-resizer { position: absolute; z-index: 10; inset: 0 -5px 0 auto; width: 10px; cursor: col-resize; touch-action: none; }
 .sidebar-resizer::after { content: ''; position: absolute; inset: 12px 4px; border-radius: 2px; background: transparent; }
 .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after, .sidebar-resizer.is-dragging::after { background: var(--muted); }
