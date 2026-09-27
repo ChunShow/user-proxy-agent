@@ -321,6 +321,8 @@ def record_call_event(row, kind, content):
                 metadata[key] = value
         if type(content.get("end_requested")) is bool:
             metadata["end_requested"] = content["end_requested"]
+        if type(content.get("farewell_already_said")) is bool:
+            metadata["farewell_already_said"] = content["farewell_already_said"]
         with propagate_attributes(
             session_id=trace_id(row["conversation_id"]), trace_name="agent-request"
         ):

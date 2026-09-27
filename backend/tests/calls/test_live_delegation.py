@@ -482,3 +482,34 @@ async def test_completion_review_does_not_replace_pending_user_confirmation(tmp_
     assert await c.review_completion(1) is False
     assert store.activity(owner, call)["questions"][0]["status"] == "pending"
     await c.close()
+
+
+@pytest.mark.asyncio
+async def test_already_said_farewell_option_reaches_bridge_without_new_summary(tmp_path):
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, store, _, call = setup_live(tmp_path)
+    sent = []
+
+    class Bridge:
+        transcripts = [
+            {"role": "caller", "text": "네"},
+            {"role": "assistant", "text": "확인 감사합니다. 안녕히 계세요."},
+        ]
+        ending = None
+
+        async def end_call(self, reason, summary, **options):
+            sent.append(options)
+
+    async def runner(context, tools):
+        t = next(t for t in tools if t.name == "end_call")
+        await t.ainvoke(
+            {"reason": "goal_achieved", "summary": "internal", "farewell_already_said": True}
+        )
+        return "종료 처리"
+
+    c = DelegationCoordinator(calls, call, Bridge(), runner=runner)
+    await c.request("test")
+    await until(lambda: bool(sent))
+    assert sent[0]["farewell_already_said"] is True
+    await c.close()

@@ -224,7 +224,7 @@ class LiveBridge:
             await self.media.send_dtmf(digit)
         return {"status": "sent", "digit": digit, "next_action": "listen"}
 
-    async def end_call(self, reason, summary, *, spoken_result=""):
+    async def end_call(self, reason, summary, *, spoken_result="", farewell_already_said=False):
         if self.ending:
             return {"status": "already_pending"}
         if reason not in {"goal_achieved", "recipient_declined", "unable_to_continue"}:
@@ -234,9 +234,19 @@ class LiveBridge:
             "summary": summary[:1000],
             "status": "waiting_for_playback",
             "requested_at": time.monotonic(),
-            "heard_output": False,
+            "heard_output": bool(
+                farewell_already_said
+                and (self.voice_end_bytes or self.pending_voice or has_sound(self.buffer))
+            ),
+            "farewell_already_said": farewell_already_said,
         }
-        await self.audit("end_requested", {"reason": reason})
+        await self.audit(
+            "end_requested",
+            {
+                "reason": reason,
+                "farewell_already_said": farewell_already_said,
+            },
+        )
         started = time.monotonic()
         await self.audit("farewell_commands_started", {})
         try:
@@ -245,9 +255,19 @@ class LiveBridge:
             )
             await self.command(
                 "session.instructions.append",
-                "먼저 다음 확인 결과를 한국어로 전달하세요: " + spoken_result + "\n"
-                "그 뒤 짧게 통화를 마치는 인사를 하세요. "
-                "새로운 질문을 하지 말고 인사 후에는 말하지 마세요.",
+                (
+                    "필요한 안내와 마지막 인사는 이미 전달됐습니다. 이제 말하지 마세요. "
+                    "추가 설명·업무 결과 요약·인사·질문을 반복하지 마세요. "
+                    "서버가 재생 확인 후 종료합니다."
+                    if farewell_already_said
+                    else "종료가 승인됐습니다. 다음 내용 중 아직 말하지 않은 필수 안내와 "
+                    "짧은 인사를 "
+                    "한 번의 발화로 자연스럽게 전달하세요. 이미 전달한 정보는 생략하고 "
+                    "인사가 포함돼 있으면 별도 인사를 덧붙이지 마세요. "
+                    "통화 결과를 요청자에게 보고하듯 설명하지 말고 전화 상대에게 직접 말하세요. "
+                    "새로운 질문을 하지 말고 인사 후에는 말하지 마세요.\n"
+                    "상대에게 전달할 내용:\n" + spoken_result
+                ),
             )
         except Exception:
             await self.audit("farewell_commands_failed", {})

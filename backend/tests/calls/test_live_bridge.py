@@ -539,3 +539,46 @@ async def test_speech_during_end_diagnostic_write_still_cancels_hangup(ending_br
     release.set()
     await asyncio.sleep(0.15)
     assert not finish.done()
+
+
+@pytest.mark.asyncio
+async def test_already_spoken_farewell_waits_for_existing_ack_without_new_speech(ending_bridge):
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    await audio(b"\xaa" * 160)
+    from test_native_audio import until
+
+    await until(lambda: bridge.sent_bytes == 160)
+    bridge.ending = None
+    commands = []
+
+    async def command(kind, content, *args):
+        commands.append((kind, content))
+
+    bridge.command = command
+    await bridge.end_call(
+        "goal_achieved",
+        "internal summary",
+        spoken_result="DO_NOT_REPEAT",
+        farewell_already_said=True,
+    )
+    assert "DO_NOT_REPEAT" not in str(commands)
+    assert bridge.ending["heard_output"]
+    clock[0] = 103
+    finish = asyncio.create_task(bridge.finish())
+    tasks.append(finish)
+    await asyncio.sleep(0.02)
+    assert not finish.done()
+    await ack()
+    await asyncio.wait_for(asyncio.shield(finish), 0.5)
+    assert bridge.ending["status"] == "audio_drained"
+
+
+@pytest.mark.asyncio
+async def test_already_spoken_without_audio_cannot_claim_playback_success(ending_bridge):
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    bridge.ending = None
+    await bridge.end_call("goal_achieved", "test", farewell_already_said=True)
+    assert not bridge.ending["heard_output"]
+    clock[0] = 126
+    await asyncio.wait_for(bridge.finish(), 0.5)
+    assert bridge.ending["status"] == "playback_unconfirmed"
