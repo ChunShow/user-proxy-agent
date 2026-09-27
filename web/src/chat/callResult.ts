@@ -16,12 +16,15 @@ export function callResult(call: PhoneCall): { note: string; summary: string } {
     const value: unknown = typeof call.end_report === 'string' ? JSON.parse(call.end_report) : null
     if (value && typeof value === 'object' && !Array.isArray(value)) end = value as Record<string, unknown>
   } catch { /* Older or malformed reports retain the ordinary incomplete result. */ }
-  if (end.reason === 'goal_achieved') {
+  if (typeof end.reason === 'string' && ['goal_achieved', 'recipient_declined', 'unable_to_continue'].includes(end.reason)) {
+    const outcome = end.reason === 'goal_achieved' ? '요청을 마쳤다고 보고했습니다. '
+      : end.reason === 'recipient_declined' ? '상대방이 통화를 거절했다고 보고했습니다. '
+      : '요청을 완료하지 못했다고 보고했습니다. '
     if (end.status === 'audio_drained') return {
-      note: '요청을 마쳤다고 보고했습니다. 마지막 음성의 재생 완료는 확정하지 못했습니다.', summary,
+      note: outcome + '마지막 음성 전송과 무음을 확인한 뒤 통화를 종료했습니다. 실제 청취 여부는 확인할 수 없습니다.', summary,
     }
     if (end.status === 'playback_unconfirmed') return {
-      note: '음성 재생 확인을 기다리다 통화를 마쳤습니다.', summary,
+      note: outcome + '음성 재생 확인을 기다리다 통화를 마쳤습니다.', summary,
     }
   }
   return { note: '확인하지 못한 내용이 남아 있습니다.', summary }

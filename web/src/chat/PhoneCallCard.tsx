@@ -70,7 +70,7 @@ export default function PhoneCallCard({ call, onStop, onRefresh, pending, error,
         </div>}
       </div>
     })}
-    {result.summary && <div className="phone-result"><p className="phone-result-label">통화 도우미가 정리한 결과</p><p>{result.summary}</p></div>}
+    {result.summary && <div className="phone-result"><p className="phone-result-label">종료 요청 시점의 요약</p><p>{result.summary}</p></div>}
     {result.note && <p className="phone-note">{result.note}</p>}
     {call.status === 'unknown' && <p className="phone-problem">발신 결과를 확인하지 못했습니다. ClawOps에서 회선 상태를 확인해야 합니다. 자동으로 다시 걸지 않습니다.</p>}
     {problem && <p className="phone-problem" role="status">{problem}</p>}

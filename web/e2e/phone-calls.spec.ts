@@ -79,7 +79,7 @@ test('model reported result restores on mobile and does not masquerade as transc
   await page.goto(`/?conversation=${cid}`)
   const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
   await expect(card.getByText('통화 테스트가 가능하다고 재확인했습니다.')).toBeVisible()
-  await expect(card.getByText('통화 도우미가 정리한 결과')).toBeVisible()
+  await expect(card.getByText('종료 요청 시점의 요약')).toBeVisible()
   await page.reload(); await expect(card).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
@@ -214,8 +214,8 @@ test('live question restores and a targeted answer is sent without starting chat
 })
 
 for (const [status, message] of [
-  ['audio_drained', '요청을 마쳤다고 보고했습니다. 마지막 음성의 재생 완료는 확정하지 못했습니다.'],
-  ['playback_unconfirmed', '음성 재생 확인을 기다리다 통화를 마쳤습니다.'],
+  ['audio_drained', '요청을 마쳤다고 보고했습니다. 마지막 음성 전송과 무음을 확인한 뒤 통화를 종료했습니다. 실제 청취 여부는 확인할 수 없습니다.'],
+  ['playback_unconfirmed', '요청을 마쳤다고 보고했습니다. 음성 재생 확인을 기다리다 통화를 마쳤습니다.'],
 ]) {
   test(`live ${status} explains playback separately from task outcome`, async ({ page }) => {
     const fixture = await phoneFixture(page, 'ended')
@@ -225,7 +225,7 @@ for (const [status, message] of [
     const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
     await expect(card.getByText(message)).toBeVisible()
     await expect(card.getByText('확인하지 못한 내용이 남아 있습니다.')).toHaveCount(0)
-    await expect(card.getByText('통화 도우미가 정리한 결과')).toBeVisible()
+    await expect(card.getByText('종료 요청 시점의 요약')).toBeVisible()
     await page.reload()
     await expect(card.getByText(message)).toBeVisible()
   })
