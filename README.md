@@ -23,56 +23,16 @@ Live가 업무 판단을 DeepAgents에 위임하며, 별도 STT/TTS 서비스는
 
 사용자는 채팅으로 요청하고, 통화와 앱 실행은 같은 대화 안에서 확인·제어한다.
 
-```mermaid
-flowchart LR
-    WEB["User Proxy Agent<br/>React 웹"]
+[![User Proxy Agent 구조: React 웹, DeepAgents, 통화·앱 서비스와 외부 연결](docs/diagrams/architecture.png)](docs/diagrams/architecture.svg)
 
-    subgraph SERVER["FastAPI · 로컬 백엔드"]
-        AGENT["DeepAgents<br/>채팅 · 통화 업무 판단"]
-        CALL["통화 서비스<br/>음성 중계 · DTMF · 종료"]
-        APPS["앱 서비스<br/>조회 · 승인 후 실행"]
+DeepAgents의 메인 채팅과 통화 업무는 **별도로 실행**되며 같은 팩토리와 텍스트 모델 설정을
+사용한다. 전화 음성은 통화 서비스를 거쳐 GPT-Live와 ClawOps 사이를 오간다.
+Google 쓰기 작업은 사용자가 웹의 확인 카드를 승인한 뒤 실행한다.
 
-        AGENT <-->|"통화 도구 · 판단 위임"| CALL
-        AGENT -->|"조회 · 실행안 제안"| APPS
-    end
-
-    MODEL["텍스트 모델 API"]
-    LIVE["GPT-Live<br/>음성 이해 · 생성"]
-    CLAWOPS["ClawOps<br/>전화 연결 · 회선 제어"]
-    PHONE["통화 상대 / ARS"]
-    GOOGLE["Google Calendar<br/>Gmail"]
-    LOCAL[("로컬 데이터 · 관측<br/>SQLite · Langfuse")]
-
-    WEB <-->|"채팅 · 응답"| AGENT
-    WEB <-->|"전사 · 듣기 · 개입"| CALL
-    WEB -->|"실행 확인 · 승인"| APPS
-    AGENT <-->|"모델 호출"| MODEL
-    CALL <-->|"음성 · 업무 위임"| LIVE
-    CALL <-->|"음성 · 회선 제어"| CLAWOPS
-    CLAWOPS <-->|"실제 전화"| PHONE
-    APPS <-->|"OAuth · Google API"| GOOGLE
-    SERVER -.->|"상태 저장 · 실행 추적"| LOCAL
-
-    classDef interface fill:#0f172a,color:#ffffff,stroke:#0f172a,stroke-width:2px;
-    classDef intelligence fill:#eef2ff,color:#312e81,stroke:#818cf8;
-    classDef service fill:#ecfdf5,color:#064e3b,stroke:#34d399;
-    classDef approval fill:#fffbeb,color:#78350f,stroke:#fbbf24;
-    classDef external fill:#f8fafc,color:#334155,stroke:#94a3b8;
-    classDef local fill:#faf5ff,color:#581c87,stroke:#c084fc,stroke-dasharray:4 3;
-    class WEB interface;
-    class AGENT,MODEL,LIVE intelligence;
-    class CALL service;
-    class APPS approval;
-    class CLAWOPS,PHONE,GOOGLE external;
-    class LOCAL local;
-    style SERVER fill:#f8fafc,stroke:#cbd5e1,color:#334155
-```
-
-DeepAgents 노드는 메인 채팅과 통화 업무의 **별도 실행**을 함께 나타낸다. 두 실행은 같은
-팩토리와 텍스트 모델 설정을 사용한다. 전화 음성은 GPT-Live와 직접 주고받으며, Google 쓰기
-작업은 사용자가 확인 카드를 승인한 뒤 실행한다. 점선은 SQLite 저장과 선택적 로컬 Langfuse
-추적 경로이며, Langfuse에는 대화 원문 대신 실행 메타데이터만 전송한다.
-모듈별 책임과 실제 파일 위치는 [코드 구조 안내](docs/code-structure.md)에 정리했다.
+읽기 편하도록 웹의 직접 통화 제어·실행 승인, 저장·추적 연결선은 생략했다.
+통화 상대·ARS는 ClawOps 카드에, 텍스트 모델 API는 DeepAgents 카드에 함께 표시했다.
+[확대 보기](docs/diagrams/architecture.svg) · [편집 원본과 구성 설명](docs/diagrams/README.md) ·
+[모듈별 코드 구조](docs/code-structure.md)
 
 ## 시작하기
 
