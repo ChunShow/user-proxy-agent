@@ -35,3 +35,13 @@
 2. 조회부터 실제 Calendar/Gmail에서 확인하고, 등록·발송은 구체적인 시험 대상을 사용자가 선택.
 3. 본인 번호의 승인된 실통화에서 양방향 청취·중지·추가 발화 후 자동 종료 확인.
    이번 합성 검사 결과를 실제 모델 판단 정확도나 전화 청취 확인으로 대신하지 않는다.
+
+## 후속 복구 점검
+
+2026-09-27 사용자의 “계속 진행해줘.”에 따라 현재 코드의 로컬 실행·저장·복구 경로를 재검사했다.
+`AGENT_SERVICE_ENV_FILE=/dev/null uv run pytest -q tests/test_dev.py tests/test_conversations.py
+ tests/actions/test_actions.py tests/calls/test_manager.py`의 49개 검사가 통과했다.
+여기에는 재시작 시 재발신 없음, 발신 결과 미확인 유지, 실행 중이던 Google 작업의 unknown 복구와
+자동 재전송 없음, 동시 승인 1회 실행, 세션 소유권별 대화 복원 검사가 포함된다.
+모사 공급자 검사이며 새 실제 전화·Google API 호출이나 운영 서버 장애 주입은 하지 않았다.
+다음 새 기능으로 통화 종료 후 채팅 결과 자동 보고 계획을 작성했으며 구현 컨펌 전 상태다.
