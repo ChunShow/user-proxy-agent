@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mockConversations } from './fixtures'
-import type { CallActivityEvent } from '../src/chat/calls'
+import type { CallActivityEvent } from '../src/calls/calls'
 
 const cid = '00000000-0000-4000-8000-000000000701'
 const other = '00000000-0000-4000-8000-000000000702'
@@ -162,9 +162,9 @@ test('synthetic transcript desktop and mobile visual evidence', async ({ page })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto(`/?conversation=${cid}`)
   await expect(page.getByText('음성 재생 확인 수신')).toBeVisible()
-  await page.screenshot({ path: '../docs/verification/step-06b-desktop.png' })
+  await page.screenshot({ path: test.info().outputPath('step-06b-desktop.png') })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   await expect(page.getByRole('button', { name: '통화 종료', exact: true })).toBeInViewport()
-  await page.screenshot({ path: '../docs/verification/step-06b-mobile.png' })
+  await page.screenshot({ path: test.info().outputPath('step-06b-mobile.png') })
 })

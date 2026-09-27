@@ -29,7 +29,7 @@ test('review exact email, approve once, and preserve uncertain result after relo
   await expect(card.getByText('실행 여부 확인 필요', { exact: true })).toBeVisible()
   expect(sent).toBe(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy()
-  await page.screenshot({ path: '../docs/verification/step-12-reviewed-action-mobile.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('step-12-reviewed-action-mobile.png'), fullPage: true })
 })
 
 test('calendar review shows Korean time and cancellation never executes', async ({ page }) => {

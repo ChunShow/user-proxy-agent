@@ -151,10 +151,10 @@ test('phone surface desktop and mobile visual evidence', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto(`/?conversation=${cid}`)
   await expect(page.getByRole('region', { name: '통화 기능 테스트 통화' })).toBeVisible()
-  await page.screenshot({ path: '../docs/verification/step-05-desktop.png' })
+  await page.screenshot({ path: test.info().outputPath('step-05-desktop.png') })
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.getByRole('textbox', { name: '메시지' })).toBeInViewport({ ratio: 1 })
-  await page.screenshot({ path: '../docs/verification/step-05-mobile.png' })
+  await page.screenshot({ path: test.info().outputPath('step-05-mobile.png') })
 })
 
 test('hidden page pauses polling and resumes when visible', async ({ page }) => {
@@ -195,7 +195,7 @@ test('live question restores and a targeted answer is sent without starting chat
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/?conversation=${cid}`)
   await expect(page.getByText(q.question, { exact: true })).toBeVisible()
-  await page.screenshot({ path: '../docs/verification/step-06b-question-mobile.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('step-06b-question-mobile.png'), fullPage: true })
   await page.reload()
   await page.getByRole('button', { name: '직접 답변하기', exact: true }).click()
   const input = page.getByRole('textbox', { name: '메시지' })
@@ -214,8 +214,8 @@ test('live question restores and a targeted answer is sent without starting chat
 })
 
 for (const [status, message] of [
-  ['audio_drained', '요청을 마쳤다고 보고했습니다. 마지막 음성 전송과 무음을 확인한 뒤 통화를 종료했습니다. 실제 청취 여부는 확인할 수 없습니다.'],
-  ['playback_unconfirmed', '요청을 마쳤다고 보고했습니다. 음성 재생 확인을 기다리다 통화를 마쳤습니다.'],
+  ['audio_drained', '요청을 마쳤다고 보고했습니다. 회선 종료 주체는 확인되지 않았습니다. 마지막 음성 전송과 무음 조건은 확인됐지만, 실제 청취 여부는 확인할 수 없습니다.'],
+  ['playback_unconfirmed', '요청을 마쳤다고 보고했습니다. 회선 종료 주체는 확인되지 않았습니다. 음성 재생 완료는 확인되지 않았습니다.'],
 ]) {
   test(`live ${status} explains playback separately from task outcome`, async ({ page }) => {
     const fixture = await phoneFixture(page, 'ended')

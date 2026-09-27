@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { PhoneCall } from '../src/chat/calls'
+import type { PhoneCall } from '../src/calls/calls'
 import { mockConversations } from './fixtures'
 
 const cid = '00000000-0000-4000-8000-000000000801'
@@ -47,7 +47,7 @@ test('instructions progress honestly, survive reload and remain in their convers
   await expect(card.getByText(instruction.text)).toBeVisible()
   await expect(card.getByText('통화 도우미에게 전달됨', { exact: true })).toBeVisible()
   await card.getByRole('heading', { name: '일정 문의' }).scrollIntoViewIfNeeded()
-  await page.screenshot({ path: '../docs/verification/step-08-instructions-desktop.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('step-08-instructions-desktop.png'), fullPage: true })
   await page.getByRole('button', { name: '다른 대화', exact: true }).click()
   await expect(page.getByText(instruction.text)).toHaveCount(0)
   await page.getByRole('button', { name: '대화로 이동' }).click()
@@ -76,7 +76,7 @@ test('uncertain delivery stays explicit on mobile and direct stop remains usable
   await page.reload()
   await expect(card.getByText('전달 여부 확인 필요', { exact: true })).toBeVisible()
   await card.getByRole('button', { name: '통화 종료', exact: true }).scrollIntoViewIfNeeded()
-  await page.screenshot({ path: '../docs/verification/step-08-instructions-mobile.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('step-08-instructions-mobile.png'), fullPage: true })
   await card.getByRole('button', { name: '통화 종료', exact: true }).click()
   await expect(card.getByText('종료 확인 중', { exact: true })).toBeVisible()
   expect(f.stops()).toBe(1)

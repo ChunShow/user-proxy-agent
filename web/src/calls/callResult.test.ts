@@ -50,7 +50,6 @@ test('timeout and unknown reports never claim that audio transmission was confir
   assert.doesNotMatch(callResult({ ...base, end_report: report('audio_drained', 'unknown') }).note, /무음을 확인한 뒤/)
 })
 
-
 test('ordinary recipient end requests are not refusal or goal achievement', () => {
   const result = callResult({ ...base, end_report: report('audio_drained', 'recipient_requested_end') })
   assert.match(result.note, /상대방이 통화 종료를 요청/)

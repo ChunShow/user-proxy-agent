@@ -10,7 +10,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --import tsx --test src/api.test.ts src/chat/stream.test.ts src/chat/transcriptData.test.ts src/chat/callResult.test.ts src/chat/callAudio.test.ts src/chat/resultMessages.test.ts src/chat/MessageList.test.tsx src/chat/sidebarWidth.test.ts src/chat/ConversationList.test.tsx",
+    "test": "node --import tsx --test src/api/health.test.ts src/chat/stream.test.ts src/calls/transcriptData.test.ts src/calls/callResult.test.ts src/calls/callAudio.test.ts src/chat/resultMessages.test.ts src/chat/MessageList.test.tsx src/chat/sidebarWidth.test.ts src/chat/ConversationList.test.tsx src/api/request.test.ts",
     "build": "tsc --noEmit && vite build",
     "test:e2e": "playwright test"
   },

@@ -1,6 +1,7 @@
+import { ApiError } from '../api/errors'
 import { useEffect, useRef, useState } from 'react'
-import { request } from '../chat/conversations'
-import { ChatError } from '../chat/stream'
+import { request } from '../api/request'
+
 import './actions.css'
 
 type Status = 'pending' | 'executing' | 'succeeded' | 'failed' | 'unknown' | 'rejected' | 'expired'
@@ -54,9 +55,9 @@ export default function ActionCards({ conversationId }: { conversationId: string
       const next = await request<Proposal>(`/api/actions/${encodeURIComponent(item.id)}/${decision}`, { expected_version: item.version })
       if (alive.current) setItems(old => merge(old, [next]))
     } catch (cause) {
-      const message = cause instanceof ChatError && cause.code === 'integration_permission_required'
+      const message = cause instanceof ApiError && cause.code === 'integration_permission_required'
         ? '앱 연결에서 일정 등록·메일 발송 권한을 먼저 허용해 주세요.'
-        : cause instanceof ChatError && cause.code === 'action_account_changed'
+        : cause instanceof ApiError && cause.code === 'action_account_changed'
           ? '연결 계정이 바뀌었어요. 현재 계정으로 새 실행안을 요청해 주세요.'
           : '처리 결과를 확인하지 못했어요. 상태를 다시 불러온 뒤 확인해 주세요.'
       if (alive.current) setErrors(old => ({ ...old, [item.id]: message }))

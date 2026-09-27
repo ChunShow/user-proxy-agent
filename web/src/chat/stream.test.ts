@@ -1,3 +1,4 @@
+import { ApiError } from '../api/errors.ts'
 import assert from 'node:assert/strict'
 import { afterEach, mock, test } from 'node:test'
 
@@ -60,7 +61,7 @@ test('provider and HTTP errors use safe error codes, not arbitrary upstream text
 })
 
 test('step limit preserves partial text and reports a non-retryable workflow failure', async () => {
-  const { streamChat, ChatError } = await import('./stream.ts')
+  const { streamChat } = await import('./stream.ts')
   mock.method(globalThis, 'fetch', async () => response(
     frame('start') + frame('delta', { text: '일부 결과' }) + frame('error', {
       code: 'agent_step_limit', message: 'private graph state', retryable: false,
@@ -68,7 +69,7 @@ test('step limit preserves partial text and reports a non-retryable workflow fai
   ))
   const seen: { type: string; text?: string }[] = []
   await assert.rejects(streamChat(request, new AbortController().signal, e => seen.push(e)), e => {
-    assert.ok(e instanceof ChatError)
+    assert.ok(e instanceof ApiError)
     assert.equal(e.code, 'agent_step_limit')
     assert.equal(e.retryable, false)
     assert.match(e.message, /범위/)

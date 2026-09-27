@@ -1,4 +1,4 @@
-import { request } from '../chat/conversations'
+import { request } from '../api/request'
 
 export interface GoogleConnection {
   status: 'not_configured' | 'disconnected' | 'connected' | 'reconnect_required'

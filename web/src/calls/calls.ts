@@ -1,4 +1,4 @@
-import { request } from './conversations'
+import { request } from '../api/request'
 
 export type PhoneStatus = 'preparing' | 'dialing' | 'connected' | 'ending' | 'ended' | 'failed' | 'canceled' | 'unknown'
 export interface CallInstruction {

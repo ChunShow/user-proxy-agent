@@ -1,5 +1,6 @@
+import { ApiError } from '../api/errors'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChatError, streamChat } from './stream'
+import { streamChat } from './stream'
 import type { ChatRequest } from './stream'
 import type { ChatMessage } from './types'
 import { mergeSavedMessages, latestChatMessage } from './resultMessages'
@@ -16,7 +17,7 @@ function readView(initial = false): View {
 }
 function remember(id: string | null) { try { if (id) localStorage.setItem(selectionKey, id); else localStorage.removeItem(selectionKey) } catch { /* Storage may be unavailable. */ } }
 function urlFor(view: View) { return view.id ? `/?conversation=${encodeURIComponent(view.id)}` : '/' }
-const failure = (error: unknown) => error instanceof ChatError ? error : new ChatError('load_failed')
+const failure = (error: unknown) => error instanceof ApiError ? error : new ApiError('load_failed')
 
 export default function useChat() {
   const [view, setView] = useState<View>(() => readView(true))

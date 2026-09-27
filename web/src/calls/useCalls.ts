@@ -1,7 +1,7 @@
+import { ApiError } from '../api/errors'
 import { useEffect, useRef, useState } from 'react'
 import { activeCalls, answerCall, isActiveCall, listCalls, mergeCalls, refreshCall, stopCall } from './calls'
 import type { CallConfirmation, PhoneCall } from './calls'
-import { ChatError } from './stream'
 
 export default function useCalls(conversationId: string | null, enabled: boolean) {
   const [records, setRecords] = useState<Record<string, PhoneCall>>({})
@@ -41,8 +41,8 @@ export default function useCalls(conversationId: string | null, enabled: boolean
         setRecords(previous => mergeCalls(previous, [...items, ...active.items]))
         setActiveIds(active.items.map(c => c.id)); setError('')
       } catch (cause) {
-        if (alive && version === revision.current && (!(cause instanceof ChatError) || cause.code !== 'not_found')) {
-          setError(cause instanceof ChatError && cause.code === 'session_expired'
+        if (alive && version === revision.current && (!(cause instanceof ApiError) || cause.code !== 'not_found')) {
+          setError(cause instanceof ApiError && cause.code === 'session_expired'
             ? '세션이 만료되었습니다. 화면을 새로 불러와 주세요.'
             : '통화 상태를 불러오지 못했습니다. 연결을 확인하고 다시 불러와 주세요.')
         }
@@ -91,7 +91,7 @@ export default function useCalls(conversationId: string | null, enabled: boolean
       })
       return true
     } catch (cause) {
-      if (mounted.current) setActionErrors(previous => ({ ...previous, [id]: cause instanceof ChatError && cause.code === 'call_question_inactive'
+      if (mounted.current) setActionErrors(previous => ({ ...previous, [id]: cause instanceof ApiError && cause.code === 'call_question_inactive'
         ? '질문이 마감되어 답변을 전달하지 못했습니다.' : '답변 접수를 확인하지 못했습니다. 같은 답변으로 다시 시도해 주세요.' }))
       return false
     } finally {

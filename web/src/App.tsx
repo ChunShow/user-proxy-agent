@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import ChatView from './chat/ChatView'
 import Composer from './chat/Composer'
 import useChat from './chat/useChat'
-import useCalls from './chat/useCalls'
-import PhoneCallCard, { ActivePhoneCall } from './chat/PhoneCallCard'
-import type { CallConfirmation } from './chat/calls'
+import useCalls from './calls/useCalls'
+import PhoneCallCard, { ActivePhoneCall } from './calls/PhoneCallCard'
+import type { CallConfirmation } from './calls/calls'
 
 export default function App() {
   const chat = useChat()

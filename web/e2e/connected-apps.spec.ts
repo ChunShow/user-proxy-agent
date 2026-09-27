@@ -51,7 +51,7 @@ test('mobile error recovers and connect uses only explicit navigation', async ({
   await expect(dialog.getByText('아직 연결하지 않았어요')).toBeVisible()
   expect(starts).toBe(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
-  await page.screenshot({ path: '../docs/verification/step-09-apps-mobile.png', fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('step-09-apps-mobile.png'), fullPage: true })
   await dialog.getByRole('button', { name: 'Google 계정 연결' }).click()
   await expect(page.getByText('합성 Google 로그인')).toBeVisible()
   expect(starts).toBe(1)

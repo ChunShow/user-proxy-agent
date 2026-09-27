@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { afterEach, mock, test } from 'node:test'
 
-import { fetchHealth } from './api.ts'
+import { fetchHealth } from './health.ts'
 
 afterEach(() => mock.restoreAll())
 

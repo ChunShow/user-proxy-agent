@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchHealth } from '../api'
+import { fetchHealth } from '../api/health'
 
 type State = 'loading' | 'connected' | 'error'
 const labels = { loading: '서버 확인 중', connected: '서버 연결됨', error: '서버 연결 실패' }
