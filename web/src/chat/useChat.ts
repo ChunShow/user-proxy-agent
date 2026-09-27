@@ -3,19 +3,19 @@ import { ChatError, streamChat } from './stream'
 import type { ChatRequest } from './stream'
 import type { ChatMessage } from './types'
 import { mergeSavedMessages, latestChatMessage } from './resultMessages'
-import { createConversation, getConversation, listConversations, prepareSession } from './conversations'
+import { createConversation, getConversation, listConversations, prepareSession, generateTitle } from './conversations'
 import type { Conversation } from './conversations'
 
-type View = { id: string | null; preview: boolean }
+type View = { id: string | null }
 type Active = { controller: AbortController; responseId: string; userId: string; request: ChatRequest; accepted: boolean }
 const selectionKey = 'proxy.selectedConversation'
 function savedSelection() { try { return localStorage.getItem(selectionKey) } catch { return null } }
 function readView(initial = false): View {
   const query = new URLSearchParams(location.search)
-  return { id: query.get('conversation') || (initial ? savedSelection() : null), preview: query.get('preview') === 'call' }
+  return { id: query.get('conversation') || (initial ? savedSelection() : null) }
 }
 function remember(id: string | null) { try { if (id) localStorage.setItem(selectionKey, id); else localStorage.removeItem(selectionKey) } catch { /* Storage may be unavailable. */ } }
-function urlFor(view: View) { return view.preview ? '/?preview=call' : view.id ? `/?conversation=${encodeURIComponent(view.id)}` : '/' }
+function urlFor(view: View) { return view.id ? `/?conversation=${encodeURIComponent(view.id)}` : '/' }
 const failure = (error: unknown) => error instanceof ChatError ? error : new ChatError('load_failed')
 
 export default function useChat() {
@@ -78,9 +78,9 @@ export default function useChat() {
   const select = useCallback((next: View, push = true) => {
     stop()
     viewRef.current = next; setView(next)
-    if (!next.preview) remember(next.id)
+    remember(next.id)
     if (push) history.pushState(null, '', urlFor(next))
-    void load(next.preview ? null : next.id)
+    void load(next.id)
     void refreshList()
   }, [load, refreshList, stop])
   useEffect(() => {
@@ -93,7 +93,7 @@ export default function useChat() {
       const current = viewRef.current
       history.replaceState(null, '', urlFor(current))
       void refreshList()
-      void load(current.preview ? null : current.id)
+      void load(current.id)
     }).catch(error => { if (!cancelled) { setLoadError(failure(error).message); setLoading(false) } })
     const pop = () => select(readView(), false)
     window.addEventListener('popstate', pop)
@@ -107,6 +107,7 @@ export default function useChat() {
   async function run(request: ChatRequest, userId: string, responseId: string) {
     const current: Active = { controller: new AbortController(), responseId, userId, request, accepted: false }
     active.current = current; pendingRetry.current = null; setBusy(true)
+    let completed = false
     try {
       await createConversation(request.conversation_id, current.controller.signal)
       if (active.current !== current) return
@@ -121,7 +122,7 @@ export default function useChat() {
         } else if (event.type === 'delta') {
           const previous = latest.current.find(m => m.id === current.responseId)?.text ?? ''
           patch(current.responseId, { text: previous + (event.text ?? ''), status: 'streaming' })
-        } else patch(current.responseId, { status: 'completed' })
+        } else { completed = true; patch(current.responseId, { status: 'completed' }) }
       })
     } catch (error) {
       if (active.current !== current) return
@@ -135,14 +136,15 @@ export default function useChat() {
       }
     } finally {
       if (active.current === current) { active.current = null; setBusy(false); void refreshList() }
+      if (completed) void generateTitle(request.conversation_id).then(() => refreshList()).catch(() => {})
     }
   }
   function send(text: string) {
-    if (active.current || loading || loadError || !ready || viewRef.current.preview || !text.trim() || latest.current.some(m => m.status === 'streaming')) return false
+    if (active.current || loading || loadError || !ready || !text.trim() || latest.current.some(m => m.status === 'streaming')) return false
     let id = viewRef.current.id
     if (!id) {
       id = crypto.randomUUID()
-      const next = { id, preview: false }
+      const next = { id }
       viewRef.current = next; setView(next); remember(id); history.replaceState(null, '', urlFor(next))
     }
     const userId = crypto.randomUUID(), responseId = crypto.randomUUID()
@@ -172,7 +174,7 @@ export default function useChat() {
     finally { paging.current = false }
   }
   const syncCallResults = useCallback(async (cid: string | null, ids: string[]) => {
-    if (!cid || cid !== viewRef.current.id || viewRef.current.preview || !ready || loading || loadError
+    if (!cid || cid !== viewRef.current.id || !ready || loading || loadError
       || active.current || resultSync.current || latest.current.some(m => ['streaming', 'submitting'].includes(m.status ?? ''))) return
     const seen = seenResults.current.get(cid) ?? new Set<string>()
     if (!ids.some(id => !seen.has(id) && !latest.current.some(m => m.id === id))) return
@@ -191,7 +193,7 @@ export default function useChat() {
   }, [ready, loading, loadError, replace, refreshList])
   const remoteBusy = !busy && messages.some(m => m.status === 'streaming')
   return { messages, busy, send, stop, retry, items, loading, loadError, listError, pageError, ready, syncCallResults,
-    selectedId: view.id, preview: view.preview, remoteBusy, messageCursor, listCursor, loadMore,
+    selectedId: view.id, remoteBusy, messageCursor, listCursor, loadMore,
     refresh: async () => {
       if (!ready) {
         setLoading(true); setLoadError('')
@@ -201,8 +203,7 @@ export default function useChat() {
       await load(viewRef.current.id)
     }, refreshList: () => refreshList(),
     moreList: () => refreshList(listCursor ?? undefined),
-    open: (id: string) => select({ id, preview: false }),
-    newConversation: () => select({ id: null, preview: false }),
-    navigate: (preview: boolean) => select({ id: viewRef.current.id, preview }),
+    open: (id: string) => select({ id }),
+    newConversation: () => select({ id: null }),
   }
 }

@@ -134,6 +134,7 @@ class ActionStore:
             db.execute("BEGIN IMMEDIATE")
             self._expire(db)
             row = self._get(db, owner, identity)
+            self.db._conversation(db, owner, row["conversation_id"])
             if row["status"] != "pending" or row["version"] != expected:
                 raise StoreError("action_inactive")
             connection = db.execute(

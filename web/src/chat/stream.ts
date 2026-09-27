@@ -13,6 +13,8 @@ export interface StreamEvent {
   text?: string
 }
 const errors: Record<string, [string, boolean]> = {
+  invalid_title: ['대화 이름을 1~80자로 입력해 주세요.', false],
+  conversation_active: ['답변 작성이나 통화, 작업 실행이 끝난 뒤 삭제해 주세요.', false],
   not_found: ['대화를 찾을 수 없습니다.', false],
   session_expired: ['세션이 만료되었습니다. 화면을 새로 불러와 주세요.', false],
   storage_unavailable: ['대화를 저장하지 못했습니다. 다시 불러와 확인해 주세요.', true],

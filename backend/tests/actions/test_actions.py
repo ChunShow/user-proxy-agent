@@ -234,3 +234,18 @@ async def test_disconnect_during_approval_does_not_abandon_claim(tmp_path):
     await m.wait_idle()
     await m.wait_idle()
     assert m.store.get(ctx.owner, a["id"])["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_deleted_conversation_cannot_execute_cached_approval(tmp_path):
+    db, m, ctx = setup(tmp_path, lambda r: pytest.fail("unexpected network"))
+    action = await m.propose(ctx, "calendar_event", event())
+    db.delete_conversation(ctx.owner, ctx.conversation_id)
+    with pytest.raises(StoreError):
+        await m.approve(ctx.owner, action["id"], action["version"])
+    assert m.store.get(ctx.owner, action["id"])["status"] == "pending"
+    db.restore_conversation(ctx.owner, ctx.conversation_id)
+    with db.connection() as conn:
+        conn.execute("UPDATE proposed_actions SET status='executing' WHERE id=?", (action["id"],))
+    with pytest.raises(StoreError, match="conversation_active"):
+        db.delete_conversation(ctx.owner, ctx.conversation_id)

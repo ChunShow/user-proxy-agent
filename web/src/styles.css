@@ -15,8 +15,9 @@
   --soft: #f0f0ee;
 }
 * { box-sizing: border-box; }
+html, body, #root { height: 100%; overflow: hidden; }
 body { margin: 0; min-width: 280px; }
-button, textarea, select { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button, select { cursor: pointer; }
 button { color: inherit; }
 button:disabled { cursor: not-allowed; opacity: .45; }

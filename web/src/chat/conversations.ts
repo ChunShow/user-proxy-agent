@@ -34,3 +34,9 @@ export async function getConversation(id: string, before?: string): Promise<Save
   data.messages = data.messages.map(m => ({ ...m, status: m.role === 'assistant' ? m.status : undefined, error: m.error_code ? new ChatError(m.error_code).message : undefined }))
   return data
 }
+
+export const renameConversation = (id: string, title: string) => request<Conversation>(`/api/conversations/${encodeURIComponent(id)}/rename`, { title })
+export const deleteConversation = (id: string) => request<void>(`/api/conversations/${encodeURIComponent(id)}/delete`, {})
+export const restoreConversation = (id: string) => request<Conversation>(`/api/conversations/${encodeURIComponent(id)}/restore`, {})
+export const generateTitle = (id: string) => request<void>(`/api/conversations/${encodeURIComponent(id)}/title`, {})
+export const listDeletedConversations = (cursor?: string) => request<ConversationPage>(`/api/conversations?deleted=true${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`)

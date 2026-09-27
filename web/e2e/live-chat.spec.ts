@@ -69,27 +69,6 @@ test('streams incrementally, stops locally, ignores late tokens and keeps the ty
   await expect(page.getByRole('button', { name: '다시 시도' })).toBeVisible()
 })
 
-test('preview navigation aborts live work and does not send fixture messages to the model', async ({ page }) => {
-  let requests = 0
-  await page.route('**/api/chat', async route => {
-    requests++
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    try { await route.fulfill({ status: 503, json: { error: { code: 'provider_unavailable' } } }) } catch { /* aborted */ }
-  })
-  await page.goto('/')
-  await page.getByRole('textbox', { name: '메시지' }).fill('실제 채팅')
-  await page.getByRole('textbox', { name: '메시지' }).press('Enter')
-  await expect.poll(() => requests).toBe(1)
-  await page.getByRole('button', { name: '화면 예시', exact: true }).click()
-  await page.getByRole('button', { name: '추가 지시' }).click()
-  await page.getByRole('textbox', { name: '메시지' }).fill('예시에만 쓰는 지시')
-  await page.getByRole('textbox', { name: '메시지' }).press('Enter')
-  expect(requests).toBe(1)
-  await page.getByRole('button', { name: '메인 대화', exact: true }).click()
-  await expect(page.getByRole('button', { name: '응답 중단' })).not.toBeVisible()
-  expect(requests).toBe(1)
-})
-
 test('reading older messages is not interrupted by new streaming text', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.addInitScript(() => {

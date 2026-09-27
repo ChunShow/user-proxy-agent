@@ -2,13 +2,22 @@ import type { Page } from '@playwright/test'
 
 type Message = { id: string; role: string; text: string; status: string; retryable: boolean }
 export async function mockConversations(page: Page) {
-  const conversations = new Map<string, { id: string; title: string; updated_at: string; messages: Message[] }>()
+  const conversations = new Map<string, { id: string; title: string; updated_at: string; messages: Message[]; deleted?: boolean }>()
   const calls: Record<string, string>[] = []
   await page.route('**/api/calls/active', route => route.fulfill({ json: { items: [] } }))
   await page.route('**/api/health', route => route.fulfill({ json: { status: 'ok', service: 'agent-service' } }))
   await page.route('**/api/session', route => route.fulfill({ status: 204 }))
   await page.route('**/api/conversations**', route => {
     const request = route.request(), url = new URL(request.url())
+    const action = url.pathname.split('/')[4], cid = url.pathname.split('/')[3]
+    if (request.method() === 'POST' && action) {
+      const item = conversations.get(cid)
+      if (!item) return route.fulfill({ status: 404, json: { error: { code: 'not_found' } } })
+      if (action === 'rename') item.title = request.postDataJSON().title.trim()
+      if (action === 'delete') item.deleted = true
+      if (action === 'restore') item.deleted = false
+      return route.fulfill({ json: item })
+    }
     if (request.method() === 'POST') {
       const { conversation_id: id } = request.postDataJSON()
       if (!conversations.has(id)) conversations.set(id, { id, title: '새 대화', updated_at: new Date().toISOString(), messages: [] })
@@ -19,10 +28,10 @@ export async function mockConversations(page: Page) {
     const id = url.pathname.split('/')[3]
     if (id) {
       const conversation = conversations.get(id)
-      return conversation ? route.fulfill({ json: { conversation, messages: conversation.messages, next_cursor: null } })
+      return conversation && !conversation.deleted ? route.fulfill({ json: { conversation, messages: conversation.messages, next_cursor: null } })
         : route.fulfill({ status: 404, json: { error: { code: 'not_found' } } })
     }
-    return route.fulfill({ json: { items: [...conversations.values()].reverse(), next_cursor: null } })
+    return route.fulfill({ json: { items: [...conversations.values()].filter(item => Boolean(item.deleted) === (url.searchParams.get('deleted') === 'true')).reverse(), next_cursor: null } })
   })
   await page.route('**/api/chat', route => {
     const body = route.request().postDataJSON()

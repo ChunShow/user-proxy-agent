@@ -12,13 +12,11 @@ import './chat.css'
 
 interface Props {
   messages: ChatMessage[]
-  preview: boolean
-  onNavigate: (preview: boolean) => void
   composer: ReactNode
-  children?: ReactNode
   onRetry?: () => void
   conversationId: string | null
   conversations: Conversation[]
+  onConversationsChanged: (deletedId?: string) => void
   onNewConversation: () => void
   onSelectConversation: (id: string) => void
   listError: string
@@ -37,54 +35,42 @@ interface Props {
   callError?: ReactNode
 }
 
-export default function ChatView({ messages, preview, onNavigate, composer, children, onRetry,
+export default function ChatView({ messages, composer, onRetry, onConversationsChanged,
   conversationId, conversations, onNewConversation, onSelectConversation, listError, hasMoreConversations,
   onMoreConversations, onReloadList, loading, loadError, onReload, hasMoreMessages, onMoreMessages, pageError, remoteBusy, afterMessage, activeCall, callError }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
-  const previous = useRef({ preview, conversationId, userId: messages.filter(m => m.role === 'user').at(-1)?.id })
+  const previous = useRef({ conversationId, userId: messages.filter(m => m.role === 'user').at(-1)?.id })
   const following = useRef(true)
   const [showLatest, setShowLatest] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const isEmpty = messages.length === 0 && !preview && !loading && !loadError
+  const isEmpty = messages.length === 0 && !loading && !loadError
   useEffect(() => {
     const userId = messages.filter(m => m.role === 'user').at(-1)?.id
     const scroll = scroller.current
     if (!scroll) return
-    if (previous.current.preview !== preview) {
-      following.current = true
-      scroll.scrollTop = 0
-    } else {
-      if (previous.current.conversationId !== conversationId) following.current = true
-      if (userId !== previous.current.userId) following.current = true
-      if (following.current) scroll.scrollTop = scroll.scrollHeight
-    }
-    previous.current = { preview, conversationId, userId }
-  }, [messages, preview, conversationId])
+    if (previous.current.conversationId !== conversationId) following.current = true
+    if (userId !== previous.current.userId) following.current = true
+    if (following.current) scroll.scrollTop = scroll.scrollHeight
+    previous.current = { conversationId, userId }
+  }, [messages, conversationId])
   useEffect(() => {
     const scroll = scroller.current, content = scroll?.firstElementChild
-    if (preview || !scroll || !content) return
+    if (!scroll || !content) return
     const observer = new ResizeObserver(() => {
       if (following.current) scroll.scrollTop = scroll.scrollHeight
     })
     observer.observe(content)
     return () => observer.disconnect()
-  }, [preview])
-  function navigate(next: boolean) {
-    setShowLatest(false)
-    onNavigate(next)
-    dialog.current?.close()
-  }
+  }, [])
   function closeMenu() { setShowLatest(false); dialog.current?.close() }
   const navigation = <nav aria-label="대화 탐색">
-    <button aria-label="새 대화" className="nav-item" onClick={() => { onNewConversation(); closeMenu() }}><Icon name="chat" /><span>새 대화</span></button>
-    {preview && <button className="nav-item" onClick={() => navigate(false)}><Icon name="chat" /><span>메인 대화</span></button>}
-    <ConversationList items={conversations} selectedId={preview ? null : conversationId} error={listError}
+    <button aria-label="새 대화" className="nav-item" onClick={() => { onNewConversation(); closeMenu() }}><Icon name="compose" /><span>새 대화</span></button>
+    <ConversationList items={conversations} selectedId={conversationId} onChanged={onConversationsChanged} error={listError}
       hasMore={hasMoreConversations} onSelect={id => { onSelectConversation(id); closeMenu() }} onMore={onMoreConversations} onReload={onReloadList} />
-    <button aria-label="화면 예시" className={`nav-item preview-link ${preview ? 'selected' : ''}`} aria-current={preview ? 'page' : undefined} onClick={() => navigate(true)}><Icon name="phone" /><span>화면 예시</span></button>
   </nav>
   return <div className={`app-shell ${collapsed ? 'nav-collapsed' : ''}`}>
     <aside className="sidebar">
@@ -131,13 +117,12 @@ export default function ChatView({ messages, preview, onNavigate, composer, chil
             }}>이전 메시지 더 보기</button>}
             {pageError && <p className="conversation-notice" role="status">{pageError}</p>}
             {callError}
-            {children}
             <MessageList messages={messages} onRetry={onRetry} afterMessage={afterMessage} />
-            {!preview && conversationId && !loading && !loadError && <ActionCards key={conversationId} conversationId={conversationId} />}
+            {conversationId && !loading && !loadError && <ActionCards key={conversationId} conversationId={conversationId} />}
             <div ref={bottom} />
           </div>
         </div>
-        {!preview && showLatest && <button className="latest-message" type="button" onClick={() => {
+        {showLatest && <button className="latest-message" type="button" onClick={() => {
           following.current = true
           bottom.current?.scrollIntoView({ block: 'end' })
           setShowLatest(false)

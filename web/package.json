@@ -10,13 +10,15 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --test src/api.test.ts src/chat/stream.test.ts src/chat/transcriptData.test.ts src/chat/callResult.test.ts src/chat/callAudio.test.ts src/chat/resultMessages.test.ts",
+    "test": "node --import tsx --test src/api.test.ts src/chat/stream.test.ts src/chat/transcriptData.test.ts src/chat/callResult.test.ts src/chat/callAudio.test.ts src/chat/resultMessages.test.ts src/chat/MessageList.test.tsx",
     "build": "tsc --noEmit && vite build",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -29,6 +31,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^16.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.0.0",
     "vite": "^8.3.1"

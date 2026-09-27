@@ -7,7 +7,6 @@ interface Props {
   onChange: (value: string) => void
   onSubmit: (text: string) => void
   inputRef: RefObject<HTMLTextAreaElement | null>
-  preview?: boolean
   busy?: boolean
   disabled?: boolean
   onStop?: () => void
@@ -16,7 +15,7 @@ interface Props {
   onClearTarget: () => void
 }
 
-export default function Composer({ value, onChange, onSubmit, inputRef, targetLabel, confirmationTarget = false, onClearTarget, preview = false, busy = false, disabled = false, onStop }: Props) {
+export default function Composer({ value, onChange, onSubmit, inputRef, targetLabel, confirmationTarget = false, onClearTarget, busy = false, disabled = false, onStop }: Props) {
   const composing = useRef(false)
   useLayoutEffect(() => {
     const input = inputRef.current
@@ -29,7 +28,7 @@ export default function Composer({ value, onChange, onSubmit, inputRef, targetLa
   }
   return <div className="composer-dock">
     <form className="composer" onSubmit={event => { event.preventDefault(); submit() }}>
-      {targetLabel && <div className="composer-target"><span>{confirmationTarget ? `통화 질문에 답변 · ${targetLabel}` : `${targetLabel}에 추가 지시 · 예시`}</span>
+      {targetLabel && <div className="composer-target"><span>{confirmationTarget ? `통화 질문에 답변 · ${targetLabel}` : `${targetLabel}에 추가 지시`}</span>
         <button type="button" aria-label="지시 대상 해제" onClick={onClearTarget}><Icon name="close" /></button>
       </div>}
       <div className="composer-row">
@@ -47,6 +46,6 @@ export default function Composer({ value, onChange, onSubmit, inputRef, targetLa
           : <button className="send-button" type="submit" aria-label="메시지 추가" title="메시지 추가" disabled={disabled || !value.trim()}><Icon name="arrow" /></button>}
       </div>
     </form>
-    <div className="composer-note"><p>{preview ? '화면 예시 · 실제 통화가 연결되지 않습니다.' : '대화는 이 기기에 저장됩니다.'}</p><span>Shift + Enter로 줄바꿈</span></div>
+    <div className="composer-note"><p>대화는 이 기기에 저장됩니다.</p><span>Shift + Enter로 줄바꿈</span></div>
   </div>
 }

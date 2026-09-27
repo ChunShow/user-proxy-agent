@@ -85,6 +85,16 @@ class ConversationStore:
                 );
             """)
 
+            columns = {r["name"] for r in db.execute("PRAGMA table_info(conversations)")}
+            if "deleted_at" not in columns:
+                db.execute("ALTER TABLE conversations ADD COLUMN deleted_at TEXT")
+            if "title_state" not in columns:
+                # Existing titles are preserved; only new conversations auto-generate.
+                db.execute("ALTER TABLE conversations ADD COLUMN title_state TEXT DEFAULT 'legacy'")
+            db.execute(
+                "UPDATE conversations SET title_state='fallback' WHERE title_state='generating'"
+            )
+
             from agent_service.calls.store import migrate
 
             migrate(db)
@@ -122,7 +132,9 @@ class ConversationStore:
 
     def _conversation(self, db, owner, cid):
         row = db.execute(
-            "SELECT id,title,updated_at FROM conversations WHERE id=? AND owner_id=?", (cid, owner)
+            "SELECT id,title,updated_at FROM conversations "
+            "WHERE id=? AND owner_id=? AND deleted_at IS NULL",
+            (cid, owner),
         ).fetchone()
         if row is None:
             raise StoreError("not_found", 404)
@@ -132,12 +144,14 @@ class ConversationStore:
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute(
-                "INSERT OR IGNORE INTO conversations VALUES(?,?,?,?,?)",
+                "INSERT OR IGNORE INTO conversations"
+                "(id,owner_id,title,created_at,updated_at,title_state) "
+                "VALUES(?,?,?,?,?,'pending')",
                 (cid, owner, "새 대화", now(), now()),
             )
             return self._conversation(db, owner, cid)
 
-    def list_conversations(self, owner, cursor=None):
+    def list_conversations(self, owner, cursor=None, deleted=False):
         position = None
         if cursor:
             try:
@@ -151,7 +165,10 @@ class ConversationStore:
             except (ValueError, TypeError, KeyError):
                 raise StoreError("invalid_request", 422) from None
         with self.connection() as db:
-            sql = "SELECT id,title,updated_at FROM conversations WHERE owner_id=?"
+            sql = (
+                "SELECT id,title,updated_at FROM conversations WHERE owner_id=? AND deleted_at IS "
+            )
+            sql += "NOT NULL" if deleted else "NULL"
             args = [owner]
             if position:
                 sql += " AND (updated_at, id) < (?, ?)"
@@ -212,7 +229,8 @@ class ConversationStore:
                 last = db.execute(
                     "SELECT * FROM messages WHERE conversation_id=? AND NOT EXISTS "
                     "(SELECT 1 FROM call_reports WHERE message_id=messages.id) "
-                    "ORDER BY seq DESC LIMIT 1", (cid,),
+                    "ORDER BY seq DESC LIMIT 1",
+                    (cid,),
                 ).fetchone()
                 if (
                     not last
@@ -244,7 +262,7 @@ class ConversationStore:
                 )
                 if not last:
                     db.execute(
-                        "UPDATE conversations SET title=? WHERE id=?",
+                        "UPDATE conversations SET title=? WHERE id=? AND title_state='pending'",
                         (" ".join(body.content.split())[:40], cid),
                     )
             db.execute(
@@ -288,4 +306,77 @@ class ConversationStore:
             db.execute(
                 "UPDATE conversations SET updated_at=? WHERE id=?",
                 (now(), identity["conversation_id"]),
+            )
+
+    def rename_conversation(self, owner, cid, title):
+        title = " ".join(title.split())
+        if not title or len(title) > 80:
+            raise StoreError("invalid_title", 422)
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._conversation(db, owner, cid)
+            db.execute(
+                "UPDATE conversations SET title=?,title_state='manual' WHERE id=?", (title, cid)
+            )
+            return self._conversation(db, owner, cid)
+
+    def delete_conversation(self, owner, cid):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._conversation(db, owner, cid)
+            checks = [
+                ("runs", "status='streaming'"),
+                ("phone_calls", "status NOT IN ('ended','failed','canceled')"),
+                ("proposed_actions", "status='executing'"),
+            ]
+            for table, condition in checks:
+                if db.execute(
+                    f"SELECT 1 FROM {table} WHERE conversation_id=? AND {condition}", (cid,)
+                ).fetchone():
+                    raise StoreError("conversation_active")
+            db.execute("UPDATE conversations SET deleted_at=? WHERE id=?", (now(), cid))
+        return {"id": cid}
+
+    def restore_conversation(self, owner, cid):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "UPDATE conversations SET deleted_at=NULL WHERE id=? AND owner_id=?", (cid, owner)
+            )
+            return self._conversation(db, owner, cid)
+
+    def claim_title(self, owner, cid):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._conversation(db, owner, cid)
+            state = db.execute(
+                "SELECT title_state FROM conversations WHERE id=?", (cid,)
+            ).fetchone()[0]
+            if state != "pending":
+                return None
+            pair = db.execute(
+                "SELECT u.text AS question,a.text AS answer FROM runs r "
+                "JOIN messages u ON u.id=r.user_message_id JOIN messages a ON a.id=r.message_id "
+                "WHERE r.conversation_id=? AND r.status='completed' "
+                "ORDER BY u.seq LIMIT 1",
+                (cid,),
+            ).fetchone()
+            if not pair:
+                return None
+            db.execute("UPDATE conversations SET title_state='generating' WHERE id=?", (cid,))
+            return dict(pair)
+
+    def finish_title(self, owner, cid, title):
+        with self.connection() as db:
+            # A manual edit or deletion can win while the model is responding.
+            if title:
+                db.execute(
+                    "UPDATE conversations SET title=?,title_state='generated' "
+                    "WHERE id=? AND owner_id=? AND title_state='generating' AND deleted_at IS NULL",
+                    (title, cid, owner),
+                )
+            db.execute(
+                "UPDATE conversations SET title_state='fallback' "
+                "WHERE id=? AND owner_id=? AND title_state='generating'",
+                (cid, owner),
             )
