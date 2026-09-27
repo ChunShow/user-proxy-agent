@@ -31,14 +31,18 @@ def end_evidence(call):
     if not isinstance(report, dict):
         report = {}
     reason, playback = report.get("reason"), report.get("status")
-    return {
+    evidence = {
         "reason": reason
-        if reason in ("goal_achieved", "recipient_declined", "unable_to_continue")
+        if reason
+        in ("goal_achieved", "recipient_declined", "recipient_requested_end", "unable_to_continue")
         else None,
         "playback_status": playback
         if playback in ("played", "audio_drained", "playback_unconfirmed")
         else None,
     }
+    if report.get("carrier_action") in {"hangup_requested", "already_ended"}:
+        evidence["carrier_action"] = report["carrier_action"]
+    return evidence
 
 
 def build_call_tools(context: CallContext):
@@ -138,10 +142,7 @@ async def call_history(context: CallContext) -> str:
     )
     rows = [
         {
-            **{
-                k: c[k]
-                for k in ("id", "subject", "status", "outcome", "error_code")
-            },
+            **{k: c[k] for k in ("id", "subject", "status", "outcome", "error_code")},
             "result_available": bool(c.get("reported_summary") or c["status"] == "ended"),
             "summary_timing": "end_request",
             "end_evidence": end_evidence(c),

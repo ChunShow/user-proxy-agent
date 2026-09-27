@@ -262,7 +262,12 @@ class LiveBridge:
             return {"error": "caller_speaking"}
         if self.ending:
             return {"status": "already_pending"}
-        if reason not in {"goal_achieved", "recipient_declined", "unable_to_continue"}:
+        if reason not in {
+            "goal_achieved",
+            "recipient_declined",
+            "recipient_requested_end",
+            "unable_to_continue",
+        }:
             return {"error": "invalid_end_reason"}
         self.ending = {
             "reason": reason,

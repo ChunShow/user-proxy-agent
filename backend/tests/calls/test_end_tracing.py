@@ -26,7 +26,19 @@ async def test_carrier_end_trace_distinguishes_hangup_from_prior_close(tmp_path,
     assert ("carrier_hangup_requested" in kinds) is not already_ended
     if not already_ended:
         assert kinds.index("carrier_hangup_requested") < kinds.index("carrier_hangup_returned")
-    assert s.get(o, call["id"])["status"] == "ended"
+    saved = s.get(o, call["id"])
+    assert saved["status"] == "ended"
+    import json
+
+    assert json.loads(saved["end_report"])["carrier_action"] == (
+        "already_ended" if already_ended else "hangup_requested"
+    )
+    assert ("carrier_already_ended" in kinds) is already_ended
+    from agent_service.calls.tools import end_evidence
+
+    assert end_evidence(saved)["carrier_action"] == (
+        "already_ended" if already_ended else "hangup_requested"
+    )
 
 
 @pytest.mark.asyncio
@@ -42,7 +54,15 @@ async def test_carrier_hangup_failure_is_recorded_without_false_confirmation(tmp
     assert "carrier_hangup_failed" in kinds
     assert "carrier_end_unconfirmed" in kinds
     assert "carrier_end_confirmed" not in kinds
+    # A later terminal lookup must retain the earlier request, even after failure.
     g.hangup_error = False
+    g.status = "completed"
+    await m.refresh(o, call["id"])
+    import json
+
+    saved = s.get(o, call["id"])
+    assert saved["status"] == "ended"
+    assert json.loads(saved["end_report"])["carrier_action"] == "hangup_requested"
     await m.shutdown()
 
 
@@ -152,7 +172,11 @@ async def test_diagnostics_failure_does_not_block_direct_hangup(tmp_path, monkey
     await until(lambda: g.dials == 1)
     await m.stop(o, call["id"])
     await until(lambda: not m.tasks)
-    assert s.get(o, call["id"])["status"] == "ended"
+    saved = s.get(o, call["id"])
+    assert saved["status"] == "ended"
+    import json
+
+    assert json.loads(saved["end_report"])["carrier_action"] == "hangup_requested"
     assert g.hangups == 1
 
 

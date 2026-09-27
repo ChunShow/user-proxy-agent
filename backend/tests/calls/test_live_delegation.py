@@ -575,3 +575,38 @@ async def test_already_said_farewell_option_reaches_bridge_without_new_summary(t
     await until(lambda: bool(sent))
     assert sent[0]["farewell_already_said"] is True
     await c.close()
+
+
+@pytest.mark.asyncio
+async def test_recipient_end_request_reaches_live_bridge_without_becoming_refusal(tmp_path):
+    import json
+
+    from agent_service.calls.delegation import DelegationCoordinator
+    from agent_service.calls.live_bridge import LiveBridge
+    from agent_service.calls.tools import end_evidence
+
+    _, calls, store, owner, call = setup_live(tmp_path)
+    bridge = LiveBridge(None)
+    bridge.transcripts = [{"role": "caller", "text": "오늘은 여기까지 할게요."}]
+
+    async def command(*args):
+        pass
+
+    bridge.command = command
+
+    async def runner(context, tools):
+        result = await next(t for t in tools if t.name == "end_call").ainvoke(
+            {"reason": "recipient_requested_end", "summary": "나머지 질문은 확인하지 못함"}
+        )
+        assert result.get("status") == "pending_final_answer"
+        return "네, 감사합니다. 안녕히 계세요."
+
+    coordinator = DelegationCoordinator(calls, call, bridge, runner=runner)
+    await coordinator.request("ordinary-end")
+    await until(lambda: coordinator.task is not None)
+    await coordinator.task
+    assert bridge.ending is not None
+    assert bridge.ending["reason"] == "recipient_requested_end"
+    evidence = end_evidence({"end_report": json.dumps(bridge.ending)})
+    assert evidence["reason"] == "recipient_requested_end"
+    await coordinator.close()

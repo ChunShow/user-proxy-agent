@@ -255,6 +255,7 @@ CALL_EVENTS = frozenset(
         "carrier_hangup_returned",
         "carrier_hangup_failed",
         "carrier_end_confirmed",
+        "carrier_already_ended",
         "carrier_end_unconfirmed",
     }
 )
@@ -262,6 +263,7 @@ _EVENT_ENUMS = {
     "reason": {
         "goal_achieved",
         "recipient_declined",
+        "recipient_requested_end",
         "unable_to_continue",
         "caller_resumed",
         "caller_audio_resumed",

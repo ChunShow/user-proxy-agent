@@ -433,6 +433,8 @@ class CallManager:
                                 "attempt": attempt + 1,
                             },
                         )
+                        end["carrier_action"] = "hangup_requested"
+                        await self.db(self.store.update, call_id, end_report=json.dumps(end))
                         started = time.monotonic()
                         try:
                             snapshot = await gateway.hangup(external_id)
@@ -455,6 +457,11 @@ class CallManager:
                             },
                         )
                     if snapshot.status in CARRIER_TERMINAL:
+                        if end.get("carrier_action") != "hangup_requested":
+                            end["carrier_action"] = "already_ended"
+                            await self.audit(
+                                call_id, "carrier_already_ended", {"status": snapshot.status}
+                            )
                         # A failed/busy call cannot establish a successful conversation.
                         if snapshot.status != "completed" and outcome == "model_reported_success":
                             outcome = "incomplete"
@@ -471,6 +478,7 @@ class CallManager:
                             status="ended",
                             outcome=outcome,
                             error_code=error_code,
+                            end_report=json.dumps(end),
                         )
                         await self.audit(
                             call_id, "carrier_end_confirmed", {"status": snapshot.status}
