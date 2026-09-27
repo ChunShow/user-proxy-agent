@@ -33,6 +33,9 @@ TEXTS = {
     "correction": "잠깐만요. 제 말 먼저 들어 주세요. 열 시가 아니라 오후 여섯 시예요. "
     "날짜는 그대로고요. 바뀐 시간만 짧게 다시 말해 주세요.",
     "backchannel": "네.",
+    "pause": "잠시만요. 잠깐 기다려 주세요.",
+    "continue": "네, 이제 계속 이야기해 주세요. 날짜와 시간을 다시 알려 주세요.",
+    "second": "아니요, 다시 바꿀게요. 오후 일곱 시로 바꿔 주세요. 마지막 시간만 다시 말해 주세요.",
 }
 TASK = (
     "실제 일정 등록이나 조회 없는 음성 대화 연습입니다. 상대가 말한 날짜와 시간을 "
@@ -91,11 +94,21 @@ async def run(args):
         else (FIXTURES / f"{args.prompt}.txt").read_text().strip()
     )
     question = load("question")
-    interrupt = load(args.scenario) if args.scenario != "none" else b""
+    interrupt = (
+        load("correction" if args.scenario == "repeat" else args.scenario)
+        if args.scenario != "none"
+        else b""
+    )
+    second = (
+        load("second" if args.scenario == "repeat" else "continue")
+        if args.scenario in {"repeat", "pause"}
+        else b""
+    )
     model_audio, phone_audio, input_audio = bytearray(), bytearray(), bytearray()
     frames, sent, transcripts, markers, errors = [], [], [], [], []
-    events, tasks = {}, []
+    events, tasks, interventions = {}, [], []
     first_voice = None
+    max_local_queue_ms = 0
     accepted_voice = None
     began = time.monotonic()
 
@@ -151,6 +164,10 @@ async def run(args):
                     event = json.loads(raw)
                     kind = event.get("type")
                     events[kind] = events.get(kind, 0) + 1
+                    if kind == "error":
+                        code = event.get("error", {}).get("code", "unknown")
+                        if isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", code):
+                            interventions.append({"kind": "model_error", "code": code, "t": now()})
                     if kind == "session.output_audio.delta":
                         block = base64.b64decode(event["delta"])
                         frames.append([now(), len(model_audio), len(block), has_sound(block)])
@@ -179,7 +196,7 @@ async def run(args):
                         await ws.send(
                             json.dumps(
                                 {
-                                    "type": "session.context.append",
+                                    "type": "session.thinking.append",
                                     "event_id": "lab-result",
                                     "delegation_id": event["delegation"]["id"],
                                     "content": "외부 조회나 변경 없이 상대가 방금 말한 내용을 "
@@ -194,10 +211,15 @@ async def run(args):
 
             class Media:
                 async def events(self):
+                    nonlocal max_local_queue_ms
                     yield {"event": "start"}
                     start2 = None
+                    start3 = None
                     for index in range(args.seconds * 50):
                         await asyncio.sleep(max(0, began + index * 0.02 - time.monotonic()))
+                        max_local_queue_ms = max(
+                            max_local_queue_ms, bridge.output.qsize() * 20 + len(bridge.buffer) / 8
+                        )
                         while not marks.empty():
                             yield await marks.get()
                         if (
@@ -216,6 +238,21 @@ async def run(args):
                                     "clip_duration_ms": len(interrupt) / 8,
                                 }
                             )
+                        if second and start2 is not None and start3 is None:
+                            after_first = (index - start2) * 0.02 - len(interrupt) / 8000
+                            if (args.scenario == "pause" and after_first > 4) or (
+                                args.scenario == "repeat"
+                                and after_first > 1.5
+                                and time.monotonic() - bridge.last_output_sound < 0.04
+                            ):
+                                start3 = index
+                                markers.append(
+                                    {
+                                        "kind": "second",
+                                        "t": now(),
+                                        "clip_duration_ms": len(second) / 8,
+                                    }
+                                )
                         offset = (index - 50) * 160
                         block = (
                             question[offset : offset + 160]
@@ -226,6 +263,10 @@ async def run(args):
                             offset = (index - start2) * 160
                             if offset < len(interrupt):
                                 block = interrupt[offset : offset + 160]
+                        if start3 is not None:
+                            offset = (index - start3) * 160
+                            if offset < len(second):
+                                block = second[offset : offset + 160]
                         block = block.ljust(160, b"\xff")
                         input_audio.extend(block)
                         yield {
@@ -241,14 +282,22 @@ async def run(args):
                         phone_audio.extend(block)
                     elif event["event"] == "mark":
                         await marks.put(event)
+                    elif event["event"] == "clear":
+                        interventions.append({"kind": "carrier_clear", "t": now()})
 
             bridge = LiveBridge(Socket(), listen_first=True)
+
+            async def audit(kind, content):
+                interventions.append({"kind": kind, "t": now(), **content})
+
+            bridge.audit = audit
             bridge.media = Media()
             bridge.ready.set()
             tasks = [
                 asyncio.create_task(bridge.receive()),
                 asyncio.create_task(bridge.play()),
                 asyncio.create_task(bridge.phone()),
+                asyncio.create_task(bridge.interruption.run()),
             ]
             try:
                 await ws.send(
@@ -272,6 +321,7 @@ async def run(args):
                 for task in tasks:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
+                await bridge.interruption.close()
                 with suppress(Exception):
                     async with asyncio.timeout(3):
                         await ws.send(json.dumps({"type": "session.close"}))
@@ -281,6 +331,8 @@ async def run(args):
         errors.append("no_model_audio")
     if args.scenario != "none" and not markers:
         errors.append("interruption_not_injected")
+    if second and len(markers) != 2:
+        errors.append("second_input_not_injected")
     result = {
         "name": args.name,
         "prompt": args.prompt,
@@ -290,7 +342,16 @@ async def run(args):
         "markers": markers,
         "transcripts": transcripts,
         "errors": errors,
+        "interventions": interventions,
         **summarize(model_audio, phone_audio, frames, sent, markers),
+        "max_queue_ms": max_local_queue_ms,
+        "dropped_audio_bytes": bridge.interruption.dropped_bytes if "bridge" in locals() else 0,
+        "clear_latency_ms": [
+            round((event["t"] - marker["t"]) * 1000)
+            for marker in markers
+            for event in interventions
+            if event["kind"] == "carrier_clear" and 0 <= event["t"] - marker["t"] < 2
+        ],
         "frames": frames,
         "sent": sent,
         "limitations": [
@@ -305,6 +366,21 @@ async def run(args):
     (out / "instructions.txt").write_text(instructions + "\n" + TASK)
     for name, raw in [("model", model_audio), ("playback", phone_audio), ("input", input_audio)]:
         save_audio(out / f"{name}.wav", bytes(raw))
+    # Receiver clock, including holes caused by withheld output; raw concatenation
+    # would conceal interruption silence. The lab carrier has immediate playback.
+    timeline = bytearray()
+    for stamp, offset, size, _ in sent:
+        start = max(len(timeline), round(stamp * 8000))
+        timeline.extend(b"\xff" * (start - len(timeline)))
+        timeline.extend(phone_audio[offset : offset + size])
+    save_audio(out / "playback-timeline.wav", bytes(timeline))
+    length = max(len(timeline), len(input_audio))
+    mixed = audioop.add(
+        audioop.mul(audioop.ulaw2lin(bytes(timeline).ljust(length, b"\xff"), 2), 2, 0.5),
+        audioop.mul(audioop.ulaw2lin(bytes(input_audio).ljust(length, b"\xff"), 2), 2, 0.5),
+        2,
+    )
+    save_audio(out / "conversation.wav", audioop.lin2ulaw(mixed, 2))
     print(
         json.dumps(
             {k: v for k, v in result.items() if k not in ("frames", "sent", "transcripts")},
@@ -324,7 +400,9 @@ def main():
     parser.add_argument("--prompt", choices=["baseline", "candidate", "current"], default="current")
     parser.add_argument("--voice", choices=["marin", "gleam", "meridian"], default="marin")
     parser.add_argument(
-        "--scenario", choices=["correction", "backchannel", "none"], default="correction"
+        "--scenario",
+        choices=["correction", "backchannel", "none", "pause", "repeat"],
+        default="correction",
     )
     parser.add_argument("--seconds", type=duration, default=42)
     args = parser.parse_args()

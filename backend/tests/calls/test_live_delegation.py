@@ -6,6 +6,68 @@ from test_native_audio import until
 
 
 @pytest.mark.asyncio
+async def test_barge_in_discards_backend_answer_started_before_correction(tmp_path):
+    from types import SimpleNamespace
+
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, store, owner, call = setup_live(tmp_path)
+    delivered = []
+
+    class Bridge:
+        transcripts = [{"role": "caller", "text": "세 시 가능한가요?"}]
+        interruption = SimpleNamespace(count=0, blocked=False)
+
+        async def deliver_result(self, *args):
+            delivered.append(args)
+
+    bridge = Bridge()
+
+    async def runner(context, tools):
+        bridge.interruption.count += 1  # New correction, then speech resumed.
+        return "이전 시간에 대한 답"
+
+    coordinator = DelegationCoordinator(calls, call, bridge, runner=runner)
+    await coordinator.request("before-correction")
+    await until(lambda: coordinator.task is not None)
+    await coordinator.task
+    assert not delivered
+    assert any(e["kind"] == "delegation_discarded" for e in store.activity(owner, call)["events"])
+    await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_barge_in_retires_pending_user_question(tmp_path):
+    from types import SimpleNamespace
+
+    from agent_service.calls.delegation import DelegationCoordinator
+
+    _, calls, store, owner, call = setup_live(tmp_path)
+
+    class Bridge:
+        transcripts = [{"role": "caller", "text": "시간 확인"}]
+        interruption = SimpleNamespace(count=0, blocked=False)
+
+        async def command(self, *args):
+            pass
+
+    bridge = Bridge()
+
+    async def runner(context, tools):
+        return await next(t for t in tools if t.name == "ask_user").ainvoke(
+            {"question": "세 시 괜찮나요?", "options": ["네", "아니요"]}
+        )
+
+    coordinator = DelegationCoordinator(calls, call, bridge, runner=runner)
+    await coordinator.request("old-question")
+    await until(lambda: bool(store.activity(owner, call)["questions"]))
+    bridge.interruption.count += 1
+    await coordinator.task
+    assert store.activity(owner, call)["questions"][0]["status"] == "canceled"
+    await coordinator.close()
+
+
+@pytest.mark.asyncio
 async def test_new_conditions_reject_old_tools_and_discard_old_end_request(tmp_path):
     from test_call_instructions import setup_instructions
 

@@ -360,7 +360,8 @@ uv run --project backend python scripts/check_live_korean.py --run --name korean
 uv run --project backend python scripts/check_live_korean.py --run --name korean-gleam --voice gleam
 ```
 
-`--scenario`는 `correction`, `backchannel`, `none`; 세션은 기본 42초, 최대 45초다.
+`--scenario`는 `correction`, `backchannel`, `none`, `pause`, `repeat`;
+세션은 기본 42초, 최대 45초다. pause는 대기 후 계속, repeat는 연속 두 번 정정을 시험한다.
 같은 이름으로 덮어쓰지 않는다. `var/korean-live-lab/<name>/`에 입력/모델 원본/중계 출력 WAV,
 실제 적용 지시와 이벤트·전사·계측 JSON이 저장된다. `baseline`은 개선 전 지시의 고정본이고
 `current`는 실행 시 제품 지시다. `candidate`는 이번에 비교한 지시를 고정한 재현용이다.
@@ -378,3 +379,11 @@ uv run --project backend python scripts/replay_live_audio.py
 `var/korean-live-replay/`의 새 디렉터리에 전후 WAV·패킷 시각·공급 공백·추가 지연과
 전체 바이트 보존 여부를 저장한다. 이는 가상 수신 시계 검증이며 실제 ClawOps 재생의
 보장은 아니다. [중계 개선 결과와 지연 비용](docs/superpowers/plans/2026-09-27-live-playout-continuity.md)을 참고한다.
+
+Live 경로는 로컬 WebRTC VAD로 지속 발화를 감지하면 대기 음성을 clear하고 이전 출력을
+일시 폐기한다. 상대 발화와 이전 출력의 정지를 확인한 뒤 재생을 재개한다. STT/TTS를
+별도 호출하지 않는다. 명령 실패/복구 타임아웃은 오류로 처리하며 실제 회선의 중단 속도는
+추가 검증이 필요하다. [끼어들기 제어 결과·제한](docs/superpowers/plans/2026-09-27-live-barge-in-control.md).
+실험 결과의 `interventions`, `clear_latency_ms`, `dropped_audio_bytes`로 중단을 확인하고
+`conversation.wav`로 합성 입력과 실제 API 출력을 함께 듣는다. `playback-timeline.wav`는
+폐기 구간의 시간을 보존한다. `playback.wav`는 전송 바이트의 연속본이므로 시간 비교에 쓰지 않는다.

@@ -7,6 +7,7 @@ import re
 import time
 from uuid import uuid4
 
+from agent_service.calls.interruption import Interruption
 from agent_service.calls.media import audio_bytes, dtmf_message
 from agent_service.calls.types import ProviderFailure
 
@@ -37,6 +38,7 @@ class LiveBridge:
         self.coordinator = None
         self.input_bytes = self.sent_bytes = self.played_bytes = 0
         self.generated_bytes = 0
+        self.cleared_unacked_bytes = self.cleared_through = 0
         self.interrupted = False
         self.last_progress = None
         self.error, self.ending = None, None
@@ -48,6 +50,7 @@ class LiveBridge:
         self.last_input_text = ""
         self.started_at = time.monotonic()
         self.timings = {}
+        self.interruption = Interruption(self)
 
     def stamp(self, name):
         self.timings.setdefault(name, round((time.monotonic() - self.started_at) * 1000))
@@ -94,6 +97,8 @@ class LiveBridge:
                 while len(self.buffer) >= 160:
                     packet = bytes(self.buffer[:160])
                     del self.buffer[:160]
+                    if not self.interruption.accept_output(packet, time.monotonic()):
+                        continue
                     self.output.put_nowait(packet)
                     if has_sound(packet):
                         self.pending_voice += 1
@@ -147,6 +152,8 @@ class LiveBridge:
                 await self.send(
                     {"type": "session.input_audio.append", "audio": event["media"]["payload"]}
                 )
+                self.interruption.detector.feed(raw, time.monotonic())
+                await self.interruption.check_input(time.monotonic())
             elif kind == "mark":
                 count = self.marks.pop(event.get("mark", {}).get("name"), None)
                 if count is not None:
@@ -196,13 +203,14 @@ class LiveBridge:
                     deadline = time.monotonic()
             deadline = max(deadline, time.monotonic() - 0.1)
             async with self.phone_lock:
-                if epoch != self.output_epoch:
+                if epoch != self.output_epoch or self.interruption.blocked:
                     continue
                 await self.media.send(
                     {"event": "media", "media": {"payload": base64.b64encode(packet).decode()}}
                 )
                 self.stamp("audio_sent_first_ms")
                 self.sent_bytes += len(packet)
+                self.interruption.detector.played(packet, time.monotonic())
                 paced_epoch = epoch
                 quiet_seconds = 0.0 if voiced else quiet_seconds + len(packet) / 8000
                 if voiced:
@@ -250,6 +258,8 @@ class LiveBridge:
         return {"status": "sent", "digit": digit, "next_action": "listen"}
 
     async def end_call(self, reason, summary, *, spoken_result="", farewell_already_said=False):
+        if self.interruption.blocked:
+            return {"error": "caller_speaking"}
         if self.ending:
             return {"status": "already_pending"}
         if reason not in {"goal_achieved", "recipient_declined", "unable_to_continue"}:
@@ -303,12 +313,19 @@ class LiveBridge:
         return {"status": "pending_farewell_playback"}
 
     async def deliver_result(self, result, delegation_id):
+        if self.interruption.blocked:
+            return
+        speech_epoch = self.interruption.count
         await self.command(
             "session.thinking.append",
             "백엔드 확인이 끝났습니다. 사용자 답변 대기를 마칩니다.",
             delegation_id,
         )
+        if self.interruption.blocked or self.interruption.count != speech_epoch:
+            return
         await self.command("session.commentary.append", result, delegation_id)
+        if self.interruption.blocked or self.interruption.count != speech_epoch:
+            return
         await self.command(
             "session.instructions.append",
             "방금 백엔드 결과를 아직 말하지 않았다면 지금 상대에게 짧게 전달하세요. "
@@ -378,6 +395,7 @@ class LiveBridge:
         now = time.monotonic()
         if (
             not self.coordinator
+            or self.interruption.blocked
             or self.ending
             or self.review_count >= 12
             or self.transcript_version <= self.reviewed_version
@@ -422,6 +440,9 @@ class LiveBridge:
             "sent_bytes": self.sent_bytes,
             "playback_acked_bytes": self.played_bytes,
             "interrupted": self.interrupted,
+            "barge_in_count": self.interruption.count,
+            "dropped_audio_bytes": self.interruption.dropped_bytes,
+            "cleared_unacked_bytes": self.cleared_unacked_bytes,
         }
         if not force and snapshot == self.last_progress:
             return
@@ -443,6 +464,13 @@ class LiveBridge:
         if self.ending and self.ending["status"] == "waiting_for_playback":
             await self.audit("end_canceled", {"reason": "output_cleared"})
         async with self.phone_lock:
+            self.cleared_unacked_bytes += max(
+                0, self.sent_bytes - max(self.played_bytes, self.cleared_through)
+            )
+            self.cleared_through = self.sent_bytes
+            self.interruption.dropped_bytes += max(
+                0, self.generated_bytes - self.sent_bytes - self.interruption.dropped_bytes
+            )
             self.output_epoch += 1
             self.ending = None
             self.pending_voice = self.voice_end_bytes = 0
@@ -460,7 +488,8 @@ class LiveBridge:
             "mode": "gpt_live",
             "error": self.error,
             "input_audio_bytes": self.input_bytes,
-            "played_audio_ms": self.played_bytes // 8,
+            "played_audio_ms": max(0, self.played_bytes - self.cleared_unacked_bytes) // 8,
+            "interruptions": self.interruption.count,
             "input_transcription_enabled": True,
             "end_call": self.ending,
             "timings_ms": self.timings,
@@ -478,6 +507,7 @@ class LiveBridge:
                 self.finish,
                 self.progress,
                 self.review,
+                self.interruption.run,
             )
         ]
         try:
@@ -492,6 +522,7 @@ class LiveBridge:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            await self.interruption.close()
             await self.save_progress(force=True)
             if self.coordinator:
                 await self.coordinator.close()

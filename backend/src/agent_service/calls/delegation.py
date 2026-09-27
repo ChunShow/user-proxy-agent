@@ -244,6 +244,8 @@ class DelegationCoordinator:
             return True
 
     async def _run(self, did, revision, *, review=None):
+        interruption = getattr(self.bridge, "interruption", None)
+        speech_epoch = getattr(interruption, "count", 0)
         end_request = None
         end_input_revision = None
         end_options = {"farewell_already_said": False}
@@ -256,7 +258,13 @@ class DelegationCoordinator:
 
         async def valid():
             current = await self.db(self.store.current, self.call_id, did, revision)
-            return current and not self.closed and unchanged_speech()
+            return (
+                current
+                and not self.closed
+                and unchanged_speech()
+                and not getattr(interruption, "blocked", False)
+                and speech_epoch == getattr(interruption, "count", 0)
+            )
 
         async def require_active():
             if not await valid():
@@ -397,6 +405,14 @@ class DelegationCoordinator:
                             {"reason": "context_changed"},
                         )
                         await self.db(self.store.finish, self.call_id, did, revision, "failed")
+                    else:
+                        await self.db(
+                            self.store.event,
+                            self.call_id,
+                            "delegation_discarded",
+                            {"reason": "context_changed"},
+                        )
+                        await self.db(self.store.finish, self.call_id, did, revision, "failed")
         except asyncio.CancelledError:
             if end_request:
                 await self.db(
@@ -423,6 +439,8 @@ class DelegationCoordinator:
                         )
                     finally:
                         await self.db(self.store.finish, self.call_id, did, revision, "failed")
+                elif speech_epoch != getattr(interruption, "count", 0):
+                    await self.db(self.store.finish, self.call_id, did, revision, "failed")
 
     async def close(self):
         self.closed = True

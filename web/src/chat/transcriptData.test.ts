@@ -50,3 +50,12 @@ test('invalid pages cannot advance a cursor or merge another calls private trans
   assert.throws(() => validateActivityPage({ ...page, events: [], has_more: true }, 'call1', 0))
   assert.throws(() => validateActivityPage({ status: 'connected' }, 'call1', 0))
 })
+
+test('discarded barge-in audio is neither pending transmission nor acknowledged playback', () => {
+  const event: CallActivityEvent = { id: 1, call_id: 'call1', kind: 'audio_progress', created_at: 1,
+    content: { generated_bytes: 2400, sent_bytes: 1600, playback_acked_bytes: 1600,
+      dropped_audio_bytes: 800, cleared_unacked_bytes: 400, interrupted: false } }
+  const progress = latestAudioProgress([event])
+  assert.equal(progress?.acked, 1200)
+  assert.equal(audioLabel(progress, false, 1), '음성 재생 확인 수신')
+})

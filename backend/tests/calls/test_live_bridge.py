@@ -177,6 +177,9 @@ async def test_progress_separates_generated_sent_and_acked_audio_and_records_sto
             "sent_bytes": 1600,
             "playback_acked_bytes": 800,
             "interrupted": False,
+            "barge_in_count": 0,
+            "dropped_audio_bytes": 0,
+            "cleared_unacked_bytes": 0,
         }
     finally:
         task.cancel()

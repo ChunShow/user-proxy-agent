@@ -47,10 +47,17 @@ export function latestAudioProgress(events: CallActivityEvent[]): AudioProgress 
     const event = events[i]
     if (event.kind !== 'audio_progress') continue
     const { generated_bytes: generated, sent_bytes: sent, playback_acked_bytes: acked, interrupted } = event.content
+    const dropped = event.content.dropped_audio_bytes ?? 0
+    const cleared = event.content.cleared_unacked_bytes ?? 0
     if (typeof generated === 'number' && typeof sent === 'number' && typeof acked === 'number'
       && [generated, sent, acked].every(n => Number.isSafeInteger(n) && n >= 0)
-      && generated >= sent && sent >= acked && typeof interrupted === 'boolean') {
-      return { generated, sent, acked, interrupted, createdAt: event.created_at }
+      && generated >= sent && sent >= acked && typeof interrupted === 'boolean'
+      && typeof dropped === 'number' && Number.isSafeInteger(dropped) && dropped >= 0
+      && typeof cleared === 'number' && Number.isSafeInteger(cleared) && cleared >= 0
+      && dropped <= generated - sent && cleared <= sent) {
+      // Exclude withheld/cleared audio; later cumulative ACKs must not resurrect it.
+      return { generated: generated - dropped - cleared, sent: sent - cleared,
+        acked: Math.max(0, acked - cleared), interrupted, createdAt: event.created_at }
     }
   }
   return null
