@@ -28,6 +28,7 @@ class LiveBridge:
         self.output = asyncio.Queue(250)
         self.buffer = bytearray()
         self.ready = asyncio.Event()
+        self.end_resume_requested = asyncio.Event()
         self.send_lock, self.phone_lock = asyncio.Lock(), asyncio.Lock()
         self.pending, self.marks = {}, {}
         self.transcripts = []
@@ -148,6 +149,7 @@ class LiveBridge:
                     # A caller resuming during farewell cancels the automatic hangup.
                     if self.ending and time.monotonic() > self.ending["requested_at"] + 0.5:
                         self.ending = None
+                        self.end_resume_requested.set()
                         await self.audit("end_canceled", {"reason": "caller_audio_resumed"})
                 await self.send(
                     {"type": "session.input_audio.append", "audio": event["media"]["payload"]}
@@ -159,6 +161,27 @@ class LiveBridge:
                 if count is not None:
                     self.stamp("playback_ack_first_ms")
                     self.played_bytes = max(self.played_bytes, count)
+
+    async def resume_after_end(self):
+        # A new utterance cancels both the hangup and the model's farewell plan.
+        # Keep the ACK wait off the input loop, and serialize with newer end decisions.
+        while True:
+            await self.end_resume_requested.wait()
+            self.end_resume_requested.clear()
+            lock = self.coordinator.control_lock if self.coordinator else asyncio.Lock()
+            async with lock:
+                if self.ending is not None:
+                    continue  # A newer backend decision has superseded this cancellation.
+                await self._clear_output()
+                await self.command(
+                    "session.instructions.append",
+                    "상대가 다시 말해 이전 종료 승인이 취소됐습니다. 준비하던 마무리 설명과 인사를 "
+                    "멈추고 상대의 새 발언을 끝까지 들으세요. 이전 답은 유지하되 "
+                    "최신 질문이나 정정에 "
+                    "먼저 답하세요. 이미 답한 질문을 다시 묻지 마세요. 마무리하려면 종료 판단을 "
+                    "다시 위임하세요.",
+                )
+                await self.audit("end_resume_completed", {})
 
     async def greet(self):
         await self.ready.wait()
@@ -509,6 +532,7 @@ class LiveBridge:
                 self.receive,
                 self.play,
                 self.greet,
+                self.resume_after_end,
                 self.finish,
                 self.progress,
                 self.review,

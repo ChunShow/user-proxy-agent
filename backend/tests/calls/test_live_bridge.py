@@ -586,3 +586,45 @@ async def test_already_spoken_without_audio_cannot_claim_playback_success(ending
     clock[0] = 126
     await asyncio.wait_for(bridge.finish(), 0.5)
     assert bridge.ending["status"] == "playback_unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_farewell_cancellation_resumes_model_without_blocking_input(ending_bridge):
+    from test_native_audio import until
+
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    commands = []
+    release = asyncio.Event()
+
+    async def delayed_command(kind, content, delegation_id=None):
+        commands.append((kind, content))
+        await release.wait()
+
+    bridge.command = delayed_command
+    tasks.append(asyncio.create_task(bridge.resume_after_end()))
+    clock[0] += 1
+    packet = {"event": "media", "media": {"payload": base64.b64encode(b"\xaa" * 160).decode()}}
+    await media.input.put(packet)
+    await until(lambda: commands)
+    assert bridge.ending is None
+    assert any(e["event"] == "clear" for e in media.sent)
+    assert commands[0][0] == "session.instructions.append"
+    await media.input.put(packet)
+    await until(lambda: bridge.input_bytes == 320)
+    assert len(commands) == 1  # One cancellation, not a new command for every packet.
+    release.set()
+
+
+@pytest.mark.asyncio
+async def test_old_resume_does_not_override_newer_end_decision(ending_bridge):
+    bridge, media, clock, audio, ack, tasks = ending_bridge
+    original_end = bridge.ending
+    before = len(bridge.model.sent)
+    bridge.end_resume_requested.set()  # Old cancellation waiting behind a newer decision.
+    worker = asyncio.create_task(bridge.resume_after_end())
+    tasks.append(worker)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert bridge.ending is original_end
+    assert len(bridge.model.sent) == before
+    assert not bridge.end_resume_requested.is_set()
