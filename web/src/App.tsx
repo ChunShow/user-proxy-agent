@@ -14,6 +14,10 @@ import type { CallConfirmation } from './chat/calls'
 export default function App() {
   const chat = useChat()
   const phones = useCalls(chat.preview ? null : chat.selectedId, chat.ready)
+  const { syncCallResults, selectedId, busy } = chat
+  useEffect(() => {
+    void syncCallResults(selectedId, phones.calls.flatMap(call => call.result_message_id ? [call.result_message_id] : []))
+  }, [syncCallResults, selectedId, busy, phones.calls])
   const [exampleMessages, setExampleMessages] = useState<ChatMessage[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const preview = chat.preview

@@ -25,7 +25,8 @@ def now():
 
 
 def public_message(row):
-    data = {key: row[key] for key in ("id", "role", "text", "status", "error_code")}
+    data = {key: row[key] for key in ("id", "seq", "role", "text", "status", "error_code")}
+    data["kind"] = "call_result" if "report_id" in row.keys() and row["report_id"] else "chat"
     data["retryable"] = row["status"] in ("stopped", "interrupted") or (
         row["status"] == "failed"
         and row["error_code"] not in ("provider_auth", "not_configured", "agent_step_limit")
@@ -169,8 +170,9 @@ class ConversationStore:
         with self.connection() as db:
             conversation = self._conversation(db, owner, cid)
             rows = db.execute(
-                "SELECT * FROM messages WHERE conversation_id=? AND seq<? "
-                "ORDER BY seq DESC LIMIT 51",
+                "SELECT messages.*, call_reports.call_id AS report_id FROM messages "
+                "LEFT JOIN call_reports ON call_reports.message_id=messages.id "
+                "WHERE conversation_id=? AND seq<? ORDER BY seq DESC LIMIT 51",
                 (cid, before if before is not None else 9223372036854775807),
             ).fetchall()
         return {
@@ -206,6 +208,12 @@ class ConversationStore:
                 "SELECT * FROM messages WHERE conversation_id=? ORDER BY seq DESC LIMIT 1", (cid,)
             ).fetchone()
             if body.retry_message_id:
+                # Background call reports do not invalidate the latest chat retry.
+                last = db.execute(
+                    "SELECT * FROM messages WHERE conversation_id=? AND NOT EXISTS "
+                    "(SELECT 1 FROM call_reports WHERE message_id=messages.id) "
+                    "ORDER BY seq DESC LIMIT 1", (cid,),
+                ).fetchone()
                 if (
                     not last
                     or last["id"] != str(body.retry_message_id)
@@ -247,8 +255,9 @@ class ConversationStore:
             # At most 80 entries are needed; preserve whole turns in history.py.
             rows = db.execute(
                 "SELECT * FROM messages WHERE conversation_id=? "
-                "AND (role='user' OR status='completed') ORDER BY seq DESC LIMIT 80",
-                (cid,),
+                "AND seq<=? AND (role='user' OR status='completed') "
+                "ORDER BY seq DESC LIMIT 80",
+                (cid, last["seq"] if body.retry_message_id else 9223372036854775807),
             ).fetchall()
         return {
             "request_id": rid,

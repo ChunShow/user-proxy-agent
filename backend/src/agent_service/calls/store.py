@@ -65,6 +65,9 @@ def migrate(db):
     from agent_service.calls.live_store import migrate as migrate_live
 
     migrate_live(db)
+    from agent_service.calls.report_store import migrate as migrate_reports
+
+    migrate_reports(db)
 
 
 def view(row):
@@ -106,7 +109,11 @@ class CallStore:
             "SELECT * FROM call_instructions WHERE call_id=? ORDER BY condition_revision",
             (row["id"],),
         ).fetchall()
+        report = db.execute(
+            "SELECT message_id FROM call_reports WHERE call_id=?", (row["id"],)
+        ).fetchone()
         return view(row) | {
+            "result_message_id": report["message_id"] if report else None,
             "confirmations": [question_view(q) for q in questions],
             "instructions": [dict(i) for i in instructions],
         }
@@ -194,6 +201,9 @@ class CallStore:
         )
         row = self._get(db, call_id)
         self._event(db, row)
+        from agent_service.calls.report_store import enqueue
+
+        enqueue(db, row)
         return row
 
     def update(self, call_id, **changes):

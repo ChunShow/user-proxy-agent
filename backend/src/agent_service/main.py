@@ -16,6 +16,7 @@ from agent_service.actions.manager import ActionManager
 from agent_service.actions.routes import router as actions_router
 from agent_service.calls.listening import router as listening_router
 from agent_service.calls.manager import CallManager
+from agent_service.calls.reports import CallReportManager
 from agent_service.calls.routes import router as calls_router
 from agent_service.calls.store import CallStore
 from agent_service.chat.routes import router
@@ -50,11 +51,13 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
         await run_in_threadpool(store.initialize)
         await run_in_threadpool(app.state.actions.store.recover)
         await app.state.calls.recover()
+        await app.state.call_reports.start()
         try:
             yield
         finally:
             await app.state.actions.shutdown()
             await app.state.calls.shutdown()
+            await app.state.call_reports.shutdown()
             await run_in_threadpool(shutdown_tracing)
 
     app = FastAPI(title="user proxy agent", version="0.1.0", lifespan=lifespan)
@@ -64,6 +67,7 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
     app.state.calls.integrations = app.state.integrations
     app.state.actions = ActionManager(store, app.state.integrations)
     app.state.calls.actions = app.state.actions
+    app.state.call_reports = CallReportManager(app.state.calls.store)
     app.include_router(listening_router)
     app.include_router(actions_router)
     app.include_router(integrations_router)

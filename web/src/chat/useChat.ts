@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChatError, streamChat } from './stream'
 import type { ChatRequest } from './stream'
 import type { ChatMessage } from './types'
+import { mergeSavedMessages, latestChatMessage } from './resultMessages'
 import { createConversation, getConversation, listConversations, prepareSession } from './conversations'
 import type { Conversation } from './conversations'
 
@@ -38,6 +39,8 @@ export default function useChat() {
   const alive = useRef(true)
   const session = useRef<Promise<void> | null>(null)
   const paging = useRef(false)
+  const resultSync = useRef<symbol | null>(null)
+  const seenResults = useRef(new Map<string, Set<string>>())
   const replace = useCallback((next: ChatMessage[]) => { latest.current = next; setMessages(next) }, [])
   const patch = useCallback((id: string, update: Partial<ChatMessage>) => {
     replace(latest.current.map(m => m.id === id ? { ...m, ...update } : m))
@@ -148,7 +151,7 @@ export default function useChat() {
     return true
   }
   function retry() {
-    const last = latest.current.at(-1), id = viewRef.current.id
+    const last = latestChatMessage(latest.current), id = viewRef.current.id
     if (!id || active.current || loading || !ready || !last?.retryable) return
     const pending = pendingRetry.current
     const userId = latest.current.filter(m => m.role === 'user').at(-1)?.id ?? ''
@@ -168,8 +171,26 @@ export default function useChat() {
     } catch (error) { if (generation.current === version) setPageError(failure(error).message) }
     finally { paging.current = false }
   }
+  const syncCallResults = useCallback(async (cid: string | null, ids: string[]) => {
+    if (!cid || cid !== viewRef.current.id || viewRef.current.preview || !ready || loading || loadError
+      || active.current || resultSync.current || latest.current.some(m => ['streaming', 'submitting'].includes(m.status ?? ''))) return
+    const seen = seenResults.current.get(cid) ?? new Set<string>()
+    if (!ids.some(id => !seen.has(id) && !latest.current.some(m => m.id === id))) return
+    const version = generation.current, ticket = Symbol('call-result')
+    resultSync.current = ticket
+    try {
+      const data = await getConversation(cid)
+      if (!alive.current || generation.current !== version || viewRef.current.id !== cid || active.current) return
+      replace(mergeSavedMessages(latest.current, data.messages))
+      // Older result messages remain accessible through the existing history pagination.
+      setMessageCursor(previous => previous ?? data.next_cursor)
+      ids.forEach(id => seen.add(id)); seenResults.current.set(cid, seen)
+      void refreshList()
+    } catch { /* Existing call polling retries; keep loaded messages and draft intact. */ }
+    finally { if (resultSync.current === ticket) resultSync.current = null }
+  }, [ready, loading, loadError, replace, refreshList])
   const remoteBusy = !busy && messages.some(m => m.status === 'streaming')
-  return { messages, busy, send, stop, retry, items, loading, loadError, listError, pageError, ready,
+  return { messages, busy, send, stop, retry, items, loading, loadError, listError, pageError, ready, syncCallResults,
     selectedId: view.id, preview: view.preview, remoteBusy, messageCursor, listCursor, loadMore,
     refresh: async () => {
       if (!ready) {

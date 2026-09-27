@@ -12,7 +12,7 @@ async function phoneFixture(page: Page, status = 'connected') {
   mock.conversations.set(other, { id: other, title: '다른 대화', updated_at: new Date().toISOString(), messages: [] })
   let call = { id: '00000000-0000-4000-8000-000000000503', conversation_id: cid, source_user_message_id: 'user-call',
     destination: '01000000001', subject: '통화 기능 테스트', purpose: '지금 통화가 가능한지 확인하기',
-    status, end_report: '{}', outcome: 'pending', reported_summary: '', error_code: null as string | null, stop_requested: false, version: 1 }
+    result_message_id: null as string | null, status, end_report: '{}', outcome: 'pending', reported_summary: '', error_code: null as string | null, stop_requested: false, version: 1 }
   let stops = 0
   await page.route('**/api/conversations/*/calls*', route => route.fulfill({ json: { items: route.request().url().includes(cid) ? [call] : [], next_cursor: null } }))
   await page.route('**/api/calls/**', route => {
@@ -230,3 +230,26 @@ for (const [status, message] of [
     await expect(card.getByText(message)).toBeVisible()
   })
 }
+
+
+test('completed call reports appear once without reloading or losing the draft', async ({ page }) => {
+  const fixture = await phoneFixture(page)
+  await page.goto(`/?conversation=${cid}`)
+  const input = page.getByRole('textbox', { name: '메시지' })
+  await input.fill('작성 중인 후속 질문')
+  fixture.mock.conversations.get(cid)!.messages.push({
+    id: 'saved-report', role: 'assistant', text: '통화 결과: 오전 10시에 가능합니다.',
+    status: 'completed', retryable: false,
+  })
+  fixture.set({ status: 'ended', result_message_id: 'saved-report' })
+  await expect(page.getByText('통화 결과: 오전 10시에 가능합니다.', { exact: true })).toHaveCount(1)
+  await expect(input).toHaveValue('작성 중인 후속 질문')
+  await page.getByRole('button', { name: '다른 대화', exact: true }).click()
+  await expect(page.getByText('통화 결과: 오전 10시에 가능합니다.', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '통화 테스트', exact: true }).click()
+  await expect(input).toHaveValue('작성 중인 후속 질문')
+  await expect(page.getByText('통화 결과: 오전 10시에 가능합니다.', { exact: true })).toHaveCount(1)
+  await page.reload()
+  await expect(page.getByText('통화 결과: 오전 10시에 가능합니다.', { exact: true })).toHaveCount(1)
+  expect(fixture.mock.calls).toHaveLength(0)
+})
