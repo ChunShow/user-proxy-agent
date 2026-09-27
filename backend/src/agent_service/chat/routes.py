@@ -7,6 +7,7 @@ import time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from langgraph.errors import GraphRecursionError
 from openai import APITimeoutError, AuthenticationError, PermissionDeniedError, RateLimitError
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
@@ -23,6 +24,10 @@ MAX_BODY = 512 * 1024
 HEARTBEAT_SECONDS = 15
 CHAT_TIMEOUT_SECONDS = 120
 ERRORS = {
+    "agent_step_limit": (
+        "처리 단계가 많아 완료하지 못했습니다. 요청 범위를 줄여 다시 질문해 주세요.",
+        False,
+    ),
     "not_configured": ("서버의 모델 설정을 확인해 주세요.", False),
     "invalid_request": (
         "메시지 형식이나 길이를 확인해 주세요. 대화가 길면 새 대화를 시작해 주세요.",
@@ -43,6 +48,8 @@ def error_data(code):
 
 
 def error_code(error):
+    if isinstance(error, GraphRecursionError):
+        return "agent_step_limit"
     if isinstance(error, (AuthenticationError, PermissionDeniedError)):
         return "provider_auth"
     if isinstance(error, RateLimitError):

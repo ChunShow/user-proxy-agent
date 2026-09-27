@@ -5,6 +5,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from langgraph.errors import GraphRecursionError
 from openai import AuthenticationError, RateLimitError
 
 from agent_service.main import create_app
@@ -124,6 +125,7 @@ def test_missing_settings_are_not_reported_as_model_success(monkeypatch, client)
 @pytest.mark.parametrize(
     "error,code,retryable",
     [
+        (GraphRecursionError("hidden-key private graph state"), "agent_step_limit", False),
         (RuntimeError("hidden-key private upstream"), "provider_unavailable", True),
         (
             AuthenticationError(
@@ -156,6 +158,11 @@ def test_partial_failures_are_terminal_and_sanitized(monkeypatch, error, code, r
     assert data[-1][1]["code"] == code
     assert data[-1][1]["retryable"] is retryable
     assert "hidden-key" not in response.text
+    saved = client.get(f"/api/conversations/{CID}").json()["messages"][-1]
+    assert saved["status"] == "failed"
+    assert saved["text"] == "일부 응답"
+    assert saved["error_code"] == code
+    assert saved["retryable"] is retryable
 
 
 def test_empty_response_is_error(monkeypatch, client):

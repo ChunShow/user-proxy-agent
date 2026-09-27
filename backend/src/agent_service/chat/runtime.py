@@ -20,6 +20,10 @@ from agent_service.calls.tools import CallContext, build_call_tools, call_histor
 from agent_service.integrations.tools import build_integration_tools
 from agent_service.settings import Settings
 
+# Graph steps include middleware as well as model/tool work. Leave room for
+# search plus several detail reads while retaining a finite loop guard.
+AGENT_RECURSION_LIMIT = 64
+
 SYSTEM_PROMPT = (
     "당신은 user proxy agent입니다. 사용자와 한국어로 간결하고 자연스럽게 대화합니다. "
     "업무에 필요한 조건이 부족하면 구체적으로 질문하세요. 사용자가 명시적으로 전화 요청을 하고 "
@@ -98,7 +102,7 @@ async def stream_agent(agent, messages: list[dict]) -> AsyncIterator[str]:
     stream = agent.astream(
         {"messages": messages},
         stream_mode="messages",
-        config={"recursion_limit": 12},
+        config={"recursion_limit": AGENT_RECURSION_LIMIT},
         subgraphs=False,
     )
     try:

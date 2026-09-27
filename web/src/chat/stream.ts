@@ -26,6 +26,7 @@ const errors: Record<string, [string, boolean]> = {
   provider_auth: ['모델 인증에 실패했습니다. 서버 설정을 확인해 주세요.', false],
   rate_limited: ['사용량 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.', true],
   provider_unavailable: ['응답을 받지 못했습니다. 다시 시도해 주세요.', true],
+  agent_step_limit: ['처리 단계가 많아 완료하지 못했습니다. 요청 범위를 줄여 다시 질문해 주세요.', false],
   timeout: ['응답 시간이 초과되었습니다. 다시 시도해 주세요.', true],
   invalid_stream: ['응답이 정상적으로 완료되지 않았습니다. 다시 시도해 주세요.', true],
 }

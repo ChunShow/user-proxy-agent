@@ -27,7 +27,8 @@ def now():
 def public_message(row):
     data = {key: row[key] for key in ("id", "role", "text", "status", "error_code")}
     data["retryable"] = row["status"] in ("stopped", "interrupted") or (
-        row["status"] == "failed" and row["error_code"] not in ("provider_auth", "not_configured")
+        row["status"] == "failed"
+        and row["error_code"] not in ("provider_auth", "not_configured", "agent_step_limit")
     )
     return data
 

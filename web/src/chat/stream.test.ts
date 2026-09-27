@@ -58,3 +58,23 @@ test('provider and HTTP errors use safe error codes, not arbitrary upstream text
     })
   }
 })
+
+test('step limit preserves partial text and reports a non-retryable workflow failure', async () => {
+  const { streamChat, ChatError } = await import('./stream.ts')
+  mock.method(globalThis, 'fetch', async () => response(
+    frame('start') + frame('delta', { text: '일부 결과' }) + frame('error', {
+      code: 'agent_step_limit', message: 'private graph state', retryable: false,
+    }),
+  ))
+  const seen: { type: string; text?: string }[] = []
+  await assert.rejects(streamChat(request, new AbortController().signal, e => seen.push(e)), e => {
+    assert.ok(e instanceof ChatError)
+    assert.equal(e.code, 'agent_step_limit')
+    assert.equal(e.retryable, false)
+    assert.match(e.message, /범위/)
+    assert.ok(!e.message.includes('private'))
+    return true
+  })
+  assert.deepEqual(seen.map(e => e.type), ['start', 'delta'])
+  assert.equal(seen[1].text, '일부 결과')
+})

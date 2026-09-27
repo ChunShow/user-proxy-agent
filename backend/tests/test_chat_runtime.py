@@ -131,3 +131,87 @@ async def test_closing_agent_stream_closes_the_provider_connection():
         assert await anext(stream) == "첫 조각"
         await stream.aclose()
         await asyncio.wait_for(closed.wait(), timeout=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("finish_after", [6, None])
+async def test_multi_read_graph_completes_but_repeated_tools_are_bounded(finish_after):
+    """Six sequential reads must finish; an endless tool loop must still fail."""
+    import asyncio
+
+    from langchain_core.tools import tool
+    from langgraph.errors import GraphRecursionError
+
+    from agent_service.chat.runtime import build_agent, stream_agent
+
+    @tool
+    async def read_record(index: int) -> str:
+        """Read one test record."""
+        return f"record {index}"
+
+    async def handler(request):
+        messages = json.loads(request.content)["messages"]
+        results = [m["content"] for m in messages if m["role"] == "tool"]
+        if finish_after is not None and len(results) == finish_after:
+            delta = {"role": "assistant", "content": "읽기 완료: " + ", ".join(results)}
+            reason = "stop"
+        else:
+            index = len(results) + 1
+            delta = {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": f"read-{index}",
+                        "type": "function",
+                        "function": {
+                            "name": "read_record",
+                            "arguments": json.dumps({"index": index}),
+                        },
+                    }
+                ],
+            }
+            reason = "tool_calls"
+        chunks = [
+            {
+                "id": "test",
+                "object": "chat.completion.chunk",
+                "choices": [{"index": 0, "delta": d, "finish_reason": r}],
+            }
+            for d, r in [(delta, None), ({}, reason)]
+        ]
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text="".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n",
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        model = ChatOpenAI(
+            model="test-chat",
+            api_key="fake",
+            base_url="https://model.test/v1",
+            streaming=True,
+            max_retries=0,
+            http_async_client=client,
+        )
+        agent = build_agent(model, call_tools=[read_record])
+
+        async def run():
+            return "".join(
+                [
+                    s
+                    async for s in stream_agent(
+                        agent, [{"role": "user", "content": "레코드 여섯 개 읽어줘"}]
+                    )
+                ]
+            )
+
+        if finish_after is None:
+            with pytest.raises(GraphRecursionError):
+                await asyncio.wait_for(run(), timeout=10)
+        else:
+            assert (
+                await run()
+                == "읽기 완료: record 1, record 2, record 3, record 4, record 5, record 6"
+            )
