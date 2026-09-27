@@ -1,5 +1,5 @@
-.app-shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); height: 100dvh; }
-.sidebar { display: flex; flex-direction: column; padding: 12px; border-right: 1px solid var(--line); background: var(--canvas); }
+.app-shell { display: grid; grid-template-columns: var(--sidebar-width, 272px) minmax(0, 1fr); height: 100dvh; }
+.sidebar { position: relative; min-width: 0; display: flex; flex-direction: column; padding: 12px; border-right: 1px solid var(--line); background: var(--canvas); }
 .sidebar nav { display: flex; flex: 1; flex-direction: column; }
 .sidebar .nav-item:last-child { margin-top: auto; }
 .sidebar-heading { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin: 0 0 28px; padding-left: 12px; font-size: 13px; color: var(--muted); }
@@ -11,7 +11,7 @@
 .nav-collapse span { display: none; }
 .nav-collapsed { grid-template-columns: 68px minmax(0, 1fr); }
 .nav-collapsed .sidebar-heading { padding: 0; justify-content: center; }
-.nav-collapsed .sidebar-heading > span, .nav-collapsed .nav-item span { display: none; }
+.nav-collapsed .sidebar-heading > .brand, .nav-collapsed .nav-item span { display: none; }
 .nav-collapsed .nav-item { justify-content: center; padding-inline: 12px; }
 .chat-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
 .chat-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 16px 32px; }
@@ -269,9 +269,6 @@
 .conversation-menu button { display: flex; gap: 8px; align-items: center; width: 100%; min-height: 44px; padding: 8px; border: 0; border-radius: 6px; background: none; font-size: 13px; text-align: left; }
 .conversation-menu button:hover { background: var(--soft); }
 .danger-text { color: var(--error); }
-.deleted-conversations { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; margin-top: 8px; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; font-size: 12px; color: var(--muted); text-align: left; }
-.deleted-conversations:hover { background: var(--soft); }
-.deleted-conversations svg { width: 16px; height: 16px; }
 .conversation-dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 24px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: var(--surface); }
 .conversation-dialog::backdrop { background: #00000038; }
 .conversation-dialog h2 { font-size: 18px; font-weight: 600; margin: 0 0 20px; }
@@ -283,10 +280,6 @@
 .conversation-dialog button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 14px; }
 .conversation-dialog .save-title { color: var(--surface); background: var(--ink); border-color: var(--ink); }
 .conversation-dialog .delete-confirm { color: white; background: var(--error); border-color: var(--error); }
-.trash-list { display: grid; gap: 12px; font-size: 14px; }
-.trash-row { display: flex; align-items: center; gap: 12px; }
-.trash-row span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.trash-row button { flex-shrink: 0; }
 .dialog-feedback, .dialog-error { font-size: 13px; line-height: 1.7; }
 .dialog-feedback { color: var(--muted); }
 .dialog-error { color: var(--error); }
@@ -296,3 +289,23 @@
 }
 
 .conversation-items:has(details[open]) { padding-bottom: 108px; }
+
+/* A quiet wordmark and a directly manipulable edge. */
+.brand { display: flex; align-items: center; gap: 9px; min-width: 0; color: var(--ink); }
+.brand-mark { flex-shrink: 0; }
+.brand-wordmark { display: flex; flex-direction: column; gap: 1px; white-space: nowrap; }
+.brand-wordmark strong { font-size: 15px; line-height: 1.2; font-weight: 650; letter-spacing: -.025em; }
+.brand-wordmark > span { font-size: 12px; line-height: 1.3; color: var(--muted); }
+.sidebar-heading { padding-left: 8px; margin-bottom: 22px; }
+.nav-collapse { flex-shrink: 0; }
+.new-conversation { color: var(--ink); font-weight: 500; gap: 11px; }
+.new-conversation > svg { width: 21px; height: 21px; stroke-width: 1.7; }
+.sidebar-resizer { position: absolute; z-index: 10; inset: 0 -5px 0 auto; width: 10px; cursor: col-resize; touch-action: none; }
+.sidebar-resizer::after { content: ''; position: absolute; inset: 12px 4px; border-radius: 2px; background: transparent; }
+.sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after, .sidebar-resizer.is-dragging::after { background: var(--muted); }
+.sidebar-resizer:focus-visible { outline: 0; }
+.sidebar-resizer:focus-visible::after { outline: 2px solid var(--ink); outline-offset: 2px; }
+.resizing-sidebar, .resizing-sidebar * { cursor: col-resize !important; user-select: none !important; }
+@media (min-width: 768px) {
+  .app-shell:not(.nav-collapsed) .assistant-heading h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}

@@ -127,7 +127,7 @@ test('legacy preview URLs show the normal chat without examples', async ({ page 
   await expect(page.getByRole('textbox', { name: '메시지' })).toBeVisible()
 })
 
-test('conversation names can be edited and deleted conversations restored', async ({ page }) => {
+test('conversation names can be edited and deleted without a trash screen', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('textbox', { name: '메시지' }).fill('대화 관리 검증')
   await page.getByRole('button', { name: '메시지 추가', exact: true }).click()
@@ -144,8 +144,7 @@ test('conversation names can be edited and deleted conversations restored', asyn
   await sidebar.getByRole('button', { name: '삭제', exact: true }).click()
   await page.getByRole('dialog', { name: '대화 삭제', exact: true }).getByRole('button', { name: '삭제', exact: true }).click()
   await expect(sidebar.getByRole('button', { name: '새 제목', exact: true })).toHaveCount(0)
-  await sidebar.getByRole('button', { name: '삭제한 대화', exact: true }).click()
-  await page.getByRole('button', { name: '복원', exact: true }).click()
-  await page.getByRole('button', { name: '닫기', exact: true }).click()
-  await expect(sidebar.getByRole('button', { name: '새 제목', exact: true })).toBeVisible()
+  await expect(sidebar.getByRole('button', { name: '삭제한 대화', exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(sidebar.getByRole('button', { name: '새 제목', exact: true })).toHaveCount(0)
 })

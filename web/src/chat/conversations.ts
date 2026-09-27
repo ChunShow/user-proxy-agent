@@ -37,6 +37,4 @@ export async function getConversation(id: string, before?: string): Promise<Save
 
 export const renameConversation = (id: string, title: string) => request<Conversation>(`/api/conversations/${encodeURIComponent(id)}/rename`, { title })
 export const deleteConversation = (id: string) => request<void>(`/api/conversations/${encodeURIComponent(id)}/delete`, {})
-export const restoreConversation = (id: string) => request<Conversation>(`/api/conversations/${encodeURIComponent(id)}/restore`, {})
 export const generateTitle = (id: string) => request<void>(`/api/conversations/${encodeURIComponent(id)}/title`, {})
-export const listDeletedConversations = (cursor?: string) => request<ConversationPage>(`/api/conversations?deleted=true${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`)

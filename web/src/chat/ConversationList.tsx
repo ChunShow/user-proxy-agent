@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon'
-import { deleteConversation, listDeletedConversations, renameConversation, restoreConversation } from './conversations'
+import { deleteConversation, renameConversation } from './conversations'
 import type { Conversation } from './conversations'
 
-type Edit = { mode: 'rename' | 'delete'; item: Conversation } | { mode: 'trash' }
+type Edit = { mode: 'rename' | 'delete'; item: Conversation }
 
 export default function ConversationList({ items, selectedId, error, hasMore, onSelect, onMore, onReload, onChanged }: {
   items: Conversation[]; selectedId: string | null; error: string; hasMore: boolean
@@ -14,8 +14,6 @@ export default function ConversationList({ items, selectedId, error, hasMore, on
   const [title, setTitle] = useState('')
   const [pending, setPending] = useState(false)
   const [problem, setProblem] = useState('')
-  const [deleted, setDeleted] = useState<Conversation[]>([])
-  const [cursor, setCursor] = useState<string | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLElement | null>(null)
@@ -36,16 +34,8 @@ export default function ConversationList({ items, selectedId, error, hasMore, on
     setTitle(next.mode === 'rename' ? next.item.title : '')
     setProblem(''); setEdit(next)
   }
-  async function loadTrash(more = false) {
-    setPending(true); setProblem('')
-    try {
-      const page = await listDeletedConversations(more ? cursor ?? undefined : undefined)
-      setDeleted(old => more ? [...old, ...page.items] : page.items); setCursor(page.next_cursor)
-    } catch { setProblem('삭제한 대화를 불러오지 못했습니다. 다시 시도해 주세요.') }
-    finally { setPending(false) }
-  }
   async function save() {
-    if (!edit || edit.mode === 'trash' || pending) return
+    if (!edit || pending) return
     setPending(true); setProblem('')
     try {
       if (edit.mode === 'rename') await renameConversation(edit.item.id, title)
@@ -53,14 +43,6 @@ export default function ConversationList({ items, selectedId, error, hasMore, on
       onChanged(edit.mode === 'delete' ? edit.item.id : undefined)
       dialog.current?.close()
     } catch (error) { setProblem(error instanceof Error ? error.message : '변경하지 못했습니다. 다시 시도해 주세요.') }
-    finally { setPending(false) }
-  }
-  async function restore(item: Conversation) {
-    setPending(true); setProblem('')
-    try {
-      await restoreConversation(item.id)
-      setDeleted(old => old.filter(c => c.id !== item.id)); onChanged()
-    } catch { setProblem('대화를 복원하지 못했습니다. 다시 시도해 주세요.') }
     finally { setPending(false) }
   }
   return <div className="conversation-list" ref={list}>
@@ -83,26 +65,19 @@ export default function ConversationList({ items, selectedId, error, hasMore, on
       {error && <div className="list-error"><p role="status">{error}</p><button type="button" onClick={onReload}>목록 다시 불러오기</button></div>}
       {hasMore && <button className="conversation-link more-conversations" type="button" onClick={onMore}>대화 더 보기</button>}
     </div>
-    <button type="button" className="deleted-conversations" onClick={event => { open({ mode: 'trash' }, event.currentTarget); void loadTrash() }}><Icon name="trash" />삭제한 대화</button>
-    <dialog ref={dialog} className="conversation-dialog" aria-label={edit?.mode === 'trash' ? '삭제한 대화' : edit?.mode === 'delete' ? '대화 삭제' : '대화 이름 변경'}
+    <dialog ref={dialog} className="conversation-dialog" aria-label={edit?.mode === 'delete' ? '대화 삭제' : '대화 이름 변경'}
       onCancel={event => { if (pending) event.preventDefault() }} onClose={() => { setEdit(null); trigger.current?.focus() }}>
       <form onSubmit={event => { event.preventDefault(); void save() }}>
-        <h2>{edit?.mode === 'trash' ? '삭제한 대화' : edit?.mode === 'delete' ? '대화를 삭제할까요?' : '대화 이름 변경'}</h2>
+        <h2>{edit?.mode === 'delete' ? '대화를 삭제할까요?' : '대화 이름 변경'}</h2>
         {edit?.mode === 'rename' && <label className="conversation-title-field">대화 이름
           <input autoFocus value={title} onChange={event => setTitle(event.target.value)} maxLength={80} disabled={pending} />
         </label>}
-        {edit?.mode === 'delete' && <p className="delete-description"><strong>{edit.item.title}</strong><br />삭제한 대화에서 다시 복원할 수 있습니다. 실제 일정과 메일은 그대로 유지됩니다.</p>}
-        {edit?.mode === 'trash' && <div className="trash-list">
-          {!deleted.length && !pending && !problem && <p>삭제한 대화가 없습니다.</p>}
-          {deleted.map(item => <div className="trash-row" key={item.id}><span>{item.title}</span><button type="button" disabled={pending} onClick={() => { void restore(item) }}>복원</button></div>)}
-          {cursor && <button type="button" disabled={pending} onClick={() => { void loadTrash(true) }}>더 보기</button>}
-          {problem && <button type="button" disabled={pending} onClick={() => { void loadTrash() }}>다시 불러오기</button>}
-        </div>}
+        {edit?.mode === 'delete' && <p className="delete-description"><strong>{edit.item.title}</strong><br />목록에서 이 대화가 사라집니다. 연결된 일정과 메일은 삭제되지 않습니다.</p>}
         {pending && <p className="dialog-feedback" role="status">처리 중입니다.</p>}
         {problem && <p className="dialog-error" role="alert">{problem}</p>}
         <div className="conversation-dialog-actions">
-          <button type="button" disabled={pending} onClick={() => dialog.current?.close()}>{edit?.mode === 'trash' ? '닫기' : '취소'}</button>
-          {edit?.mode !== 'trash' && <button className={edit?.mode === 'delete' ? 'delete-confirm' : 'save-title'} type="submit" disabled={pending || (edit?.mode === 'rename' && !title.trim())}>{edit?.mode === 'delete' ? '삭제' : '저장'}</button>}
+          <button type="button" disabled={pending} onClick={() => dialog.current?.close()}>취소</button>
+          <button className={edit?.mode === 'delete' ? 'delete-confirm' : 'save-title'} type="submit" disabled={pending || (edit?.mode === 'rename' && !title.trim())}>{edit?.mode === 'delete' ? '삭제' : '저장'}</button>
         </div>
       </form>
     </dialog>

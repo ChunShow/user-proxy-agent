@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import ConnectionStatus from '../components/ConnectionStatus'
 import ActionCards from '../actions/ActionCards'
 import ConnectedApps from '../integrations/ConnectedApps'
 import Icon from '../components/Icon'
+import Brand from '../components/Brand'
+import useSidebarWidth from './useSidebarWidth'
 import ConversationList from './ConversationList'
 import type { Conversation } from './conversations'
 import type { ChatMessage } from './types'
@@ -38,6 +40,7 @@ interface Props {
 export default function ChatView({ messages, composer, onRetry, onConversationsChanged,
   conversationId, conversations, onNewConversation, onSelectConversation, listError, hasMoreConversations,
   onMoreConversations, onReloadList, loading, loadError, onReload, hasMoreMessages, onMoreMessages, pageError, remoteBusy, afterMessage, activeCall, callError }: Props) {
+  const sidebar = useSidebarWidth()
   const dialog = useRef<HTMLDialogElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
@@ -68,26 +71,27 @@ export default function ChatView({ messages, composer, onRetry, onConversationsC
   }, [])
   function closeMenu() { setShowLatest(false); dialog.current?.close() }
   const navigation = <nav aria-label="대화 탐색">
-    <button aria-label="새 대화" className="nav-item" onClick={() => { onNewConversation(); closeMenu() }}><Icon name="compose" /><span>새 대화</span></button>
+    <button aria-label="새 대화" className="nav-item new-conversation" onClick={() => { onNewConversation(); closeMenu() }}><Icon name="newChat" /><span>새 대화</span></button>
     <ConversationList items={conversations} selectedId={conversationId} onChanged={onConversationsChanged} error={listError}
       hasMore={hasMoreConversations} onSelect={id => { onSelectConversation(id); closeMenu() }} onMore={onMoreConversations} onReload={onReloadList} />
   </nav>
-  return <div className={`app-shell ${collapsed ? 'nav-collapsed' : ''}`}>
-    <aside className="sidebar">
-      <div className="sidebar-heading"><span>대화</span>
-        <button className="nav-collapse" aria-label={collapsed ? '탐색 영역 펼치기' : '탐색 영역 접기'} onClick={() => setCollapsed(!collapsed)}><Icon name="menu" /><span>{collapsed ? '펼치기' : '접기'}</span></button>
+  return <div className={`app-shell ${collapsed ? 'nav-collapsed' : ''}`} style={{ '--sidebar-width': `${sidebar.width}px` } as CSSProperties}>
+    <aside id="desktop-sidebar" className="sidebar">
+      <div className="sidebar-heading"><Brand />
+        <button className="nav-collapse" aria-label={collapsed ? '탐색 영역 펼치기' : '탐색 영역 접기'} onClick={() => setCollapsed(!collapsed)}><Icon name="panel" /><span>{collapsed ? '펼치기' : '접기'}</span></button>
       </div>
       {navigation}
+      {!collapsed && <div className={`sidebar-resizer ${sidebar.dragging ? 'is-dragging' : ''}`} {...sidebar.separator} />}
     </aside>
     <dialog ref={dialog} className="mobile-menu" aria-label="탐색 메뉴" onClose={() => { setMenuOpen(false); menuButton.current?.focus() }}>
-      <div className="menu-heading"><strong>user proxy agent</strong><button aria-label="메뉴 닫기" onClick={() => dialog.current?.close()}><Icon name="close" /></button></div>
+      <div className="menu-heading"><Brand /><button aria-label="메뉴 닫기" onClick={() => dialog.current?.close()}><Icon name="close" /></button></div>
       {navigation}
     </dialog>
     <main className="chat-main">
       <header className="chat-header">
         <div className="assistant-heading">
           <button ref={menuButton} className="mobile-menu-button" aria-label="메뉴 열기" aria-expanded={menuOpen} onClick={() => { setMenuOpen(true); dialog.current?.showModal() }}><Icon name="menu" /></button>
-          <h1>user proxy agent</h1>
+          <h1>User Proxy Agent</h1>
         </div>
         <div className="header-tools"><ConnectedApps /><ConnectionStatus /></div>
       </header>
