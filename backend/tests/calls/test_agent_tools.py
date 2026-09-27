@@ -194,6 +194,8 @@ async def test_result_lookup_preserves_summary_time_and_returns_later_transcript
     ]
     records = await call_history(ctx)
     assert "audio_drained" in records and "end_request" in records
+    assert "인사 전 판단" not in records
+    assert '"result_available": true' in records
     other = build_call_tools(CallContext(m, "other", c, u))
     assert (await other[1].ainvoke({"call_id": call}))["error"] == "not_found"
     assert g.dials == 0

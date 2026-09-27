@@ -213,6 +213,22 @@ health·세션·대화 저장·chat 응답은 E2E에서 제어한다. 실제 모
 backend/.venv/bin/python scripts/check_live_chat.py --run
 ```
 
+통화 결과에서 일정·메일 확인 카드로 이어지는 모델 판단은 별도 합성 검증으로 반복할 수 있다.
+실제 텍스트 모델을 호출하므로 모델 사용 비용이 발생한다. 임시 DB와 가상 계정·통화 기록을
+사용하며 ClawOps/Google 네트워크 클라이언트는 연결하지 않는다. 제품 서버가 없어도 실행된다.
+
+```bash
+cd backend
+uv run python ../scripts/check_call_followup.py --run
+# 한 사례만 확인
+uv run python ../scripts/check_call_followup.py --run --case ambiguous_time
+```
+
+확정 시간의 실행안, 조회 전용 요청, 불명확한 시간의 세 사례를 확인한다. 출력의
+`synthetic_answer`와 메일 본문은 직접 검토해야 하며, 통과가 실제 통화·Google 실행 성공이나
+모델의 모든 응답을 보장하지는 않는다. [검증 기록](docs/superpowers/plans/2026-09-27-call-followup-validation.md).
+
+
 API 사용 시 먼저 `POST /api/session`에 `{}`를 보내 쿠키를 받고, 이후 같은 쿠키를 유지한다.
 `POST /api/conversations`에 클라이언트가 생성한 `conversation_id` UUID를 보내 대화를 만든다.
 `POST /api/chat`은 `{request_id, conversation_id, content}` 또는
