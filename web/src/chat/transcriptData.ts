@@ -27,19 +27,58 @@ export function mergeActivity(previous: CallActivityEvent[], incoming: CallActiv
   return [...events.values()].sort((a, b) => a.id - b.id)
 }
 
+type SegmentTime = { start: number; end: number }
+function segmentTime(content: CallActivityEvent['content']): SegmentTime | null {
+  const start = content.start_ms, end = content.end_ms
+  return typeof start === 'number' && typeof end === 'number'
+    && Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end >= start
+    ? { start, end } : null
+}
+
 export function transcriptRows(events: CallActivityEvent[]): TranscriptRow[] {
   const rows: TranscriptRow[] = []
-  let lastAt = -Infinity
+  const speakers = new Map<TranscriptRow['role'], { row: TranscriptRow; time: SegmentTime | null; arrived: number }>()
+  let previousRole: TranscriptRow['role'] | null = null
   for (const event of events) {
     if (event.kind !== 'transcript') continue
     const { role, text } = event.content
     if ((role !== 'caller' && role !== 'assistant') || typeof text !== 'string' || !text) continue
-    const last = rows.at(-1)
-    if (last && last.role === role && event.created_at - lastAt < 2) last.text += text
-    else rows.push({ id: event.id, role, text, createdAt: event.created_at })
-    lastAt = event.created_at
+    const previous = speakers.get(role)
+    const time = segmentTime(event.content)
+    const crossedSpeaker = previousRole !== role
+    let continuation = false
+    if (previous) {
+      if (time && previous.time) {
+        // Input/output deltas can alternate inside a single word. Use each
+        // speaker's audio timeline, not the interleaved network arrival order.
+        const gap = time.start - previous.time.end
+        const endedSentence = /[.!?。！？]["'”’)]*\s*$/u.test(previous.row.text)
+        continuation = time.start >= previous.time.start
+          && gap <= (crossedSpeaker ? 800 : 2000)
+          && !(crossedSpeaker && endedSentence)
+      } else {
+        // Legacy records have no audio timing: never guess across speakers.
+        const gap = event.created_at - previous.arrived
+        continuation = !crossedSpeaker && gap >= 0 && gap < 2
+      }
+    }
+    let row: TranscriptRow
+    if (previous && continuation) {
+      row = previous.row
+      row.text += text
+    } else {
+      row = { id: event.id, role, text, createdAt: event.created_at }
+      rows.push(row)
+    }
+    speakers.set(role, { row, time, arrived: event.created_at })
+    previousRole = role
   }
   return rows
+}
+
+export function transcriptRevision(rows: TranscriptRow[]): string {
+  // A late fragment may update an earlier speaker row, leaving the last intact.
+  return `${rows.length}:${rows.reduce((sum, row) => sum + row.text.length, 0)}`
 }
 
 export function latestAudioProgress(events: CallActivityEvent[]): AudioProgress | null {

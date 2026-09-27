@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { audioLabel, latestAudioProgress, transcriptRows } from './transcriptData'
+import { audioLabel, latestAudioProgress, transcriptRows, transcriptRevision } from './transcriptData'
 import useCallActivity from './useCallActivity'
 
 export default function CallTranscript({ callId, active }: { callId: string; active: boolean }) {
@@ -7,8 +7,7 @@ export default function CallTranscript({ callId, active }: { callId: string; act
   const activity = useCallActivity(callId, expanded)
   const rows = useMemo(() => transcriptRows(activity.events), [activity.events])
   const progress = useMemo(() => latestAudioProgress(activity.events), [activity.events])
-  const last = rows.at(-1)
-  const revision = `${last?.id ?? 0}:${last?.text.length ?? 0}`
+  const revision = transcriptRevision(rows)
   const id = useId()
   const scroll = useRef<HTMLDivElement>(null)
   const following = useRef(true)
