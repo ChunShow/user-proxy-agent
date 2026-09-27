@@ -82,6 +82,7 @@ Google은 본인 OAuth 설정과 웹의 계정 동의가 필요하다. 일정 �
 | `backend/src/agent_service/` | 채팅, 통화, Google 연결, 확인 후 실행, 저장소 |
 | `backend/tests/` | 백엔드 자동 검사 |
 | `web/src/`, `web/e2e/` | React 화면과 웹 검사 |
+| `web/src/api/`, `web/src/calls/` | 공통 HTTP 처리와 통화 기능 |
 | `scripts/` | 로컬 실행, 검사, 합성 음성 평가 |
 | `docs/` | 운영 안내, 제품 방향, 계획·검증 기록 |
 | `.env.example` | 인증정보가 없는 설정 템플릿 |
@@ -91,4 +92,4 @@ Google은 본인 OAuth 설정과 웹의 계정 동의가 필요하다. 일정 �
 잠금 파일 `backend/uv.lock`, `web/package-lock.json`을 함께 버전 관리한다.
 
 [제품 방향](docs/product.md) · [로드맵](docs/roadmap.md) · [작업 지침](AGENTS.md) ·
-[저장소 업로드 범위](docs/repository.md)
+[코드 구조](docs/code-structure.md) · [저장소 업로드 범위](docs/repository.md)

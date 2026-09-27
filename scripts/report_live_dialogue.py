@@ -55,10 +55,13 @@ def build(labels):
         )
     page = """<!doctype html><html lang="ko"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>한국어 음성 평가</title>
-<style>body{max-width:940px;margin:40px auto;padding:0 20px;font:16px/1.7 system-ui;color:#262626;background:#fff}
-h1{font-size:28px}h2{margin-top:48px}h3{font-size:17px;margin:0}article{padding:24px 0;border-top:1px solid #ddd}
+<style>body{max-width:940px;margin:40px auto;padding:0 20px;font:16px/1.7 system-ui;
+color:#262626;background:#fff}
+h1{font-size:28px}h2{margin-top:48px}h3{font-size:17px;margin:0}
+article{padding:24px 0;border-top:1px solid #ddd}
 p{margin:8px 0}.status{font-size:14px;color:#555}audio{display:block;width:100%;margin:16px 0}
-summary{cursor:pointer;padding:8px 0}strong{display:inline-block;min-width:60px}details p{white-space:pre-wrap}
+summary{cursor:pointer;padding:8px 0}strong{display:inline-block;min-width:60px}
+details p{white-space:pre-wrap}
 </style><h1>한국어 음성 평가</h1><p>합성 상대 음성과 실제 gpt-live-1 · marin 응답을 비교합니다.
 전화망은 연결하지 않았습니다. 음성 파일에는 합성 입력과 모사 전화 재생이 함께 들어 있습니다.</p>
 <p>입력·전송 확인은 자연스러움의 합격 판정이 아닙니다. 전사 누락·화자 오류가 있을 수 있으며,

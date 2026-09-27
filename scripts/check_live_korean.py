@@ -17,13 +17,13 @@ import wave
 from contextlib import suppress
 from pathlib import Path
 
-from live_korean_metrics import duration, summarize
-
 from agent_service.calls.live import INSTRUCTIONS, live_url
 from agent_service.calls.live_bridge import LiveBridge, has_sound
 from agent_service.calls.realtime import NoRedirectConnect
 from agent_service.calls.settings import CallSettings
 from agent_service.settings import ROOT
+
+from live_korean_metrics import duration, summarize
 
 LAB = ROOT / "var/korean-live-lab"
 FIXTURES = Path(__file__).parent / "fixtures/live-korean"

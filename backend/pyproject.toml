@@ -40,3 +40,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent_service"]
+known-local-folder = ["live_dialogue_cases", "live_korean_metrics"]

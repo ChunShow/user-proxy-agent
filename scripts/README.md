@@ -21,6 +21,7 @@ BACKEND_PORT=9011 WEB_PORT=5181 ./scripts/dev.sh
 서버 수명 테스트에는 임시 로컬 포트를 사용한다. API 공급자는 모사하고 로컬 `.env`는 읽지 않는다.
 
 브라우저 검사는 별도 실행한다. 독립 웹 서버에 5193 포트를 사용하고 API는 모사한다.
+스크린샷과 실패 trace는 Git 제외 `web/test-results/`에 저장하며 과거 문서 이미지는 갱신하지 않는다.
 
 ```bash
 cd web
