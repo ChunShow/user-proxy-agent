@@ -19,6 +19,61 @@ Live가 업무 판단을 DeepAgents에 위임하며, 별도 STT/TTS 서비스는
 개선 중이다. [최근 음성 평가](docs/evaluations/2026-09-27-korean-dialogue.md)와
 [단계별 검증 범위](docs/roadmap.md)에 확인된 동작과 남은 제한을 기록했다.
 
+## 전체 구조
+
+사용자는 채팅으로 요청하고, 통화와 앱 실행은 같은 대화 안에서 확인·제어한다.
+
+```mermaid
+flowchart LR
+    WEB["User Proxy Agent<br/>React 웹"]
+
+    subgraph SERVER["FastAPI · 로컬 백엔드"]
+        AGENT["DeepAgents<br/>채팅 · 통화 업무 판단"]
+        CALL["통화 서비스<br/>음성 중계 · DTMF · 종료"]
+        APPS["앱 서비스<br/>조회 · 승인 후 실행"]
+
+        AGENT <-->|"통화 도구 · 판단 위임"| CALL
+        AGENT -->|"조회 · 실행안 제안"| APPS
+    end
+
+    MODEL["텍스트 모델 API"]
+    LIVE["GPT-Live<br/>음성 이해 · 생성"]
+    CLAWOPS["ClawOps<br/>전화 연결 · 회선 제어"]
+    PHONE["통화 상대 / ARS"]
+    GOOGLE["Google Calendar<br/>Gmail"]
+    LOCAL[("로컬 데이터 · 관측<br/>SQLite · Langfuse")]
+
+    WEB <-->|"채팅 · 응답"| AGENT
+    WEB <-->|"전사 · 듣기 · 개입"| CALL
+    WEB -->|"실행 확인 · 승인"| APPS
+    AGENT <-->|"모델 호출"| MODEL
+    CALL <-->|"음성 · 업무 위임"| LIVE
+    CALL <-->|"음성 · 회선 제어"| CLAWOPS
+    CLAWOPS <-->|"실제 전화"| PHONE
+    APPS <-->|"OAuth · Google API"| GOOGLE
+    SERVER -.->|"상태 저장 · 실행 추적"| LOCAL
+
+    classDef interface fill:#0f172a,color:#ffffff,stroke:#0f172a,stroke-width:2px;
+    classDef intelligence fill:#eef2ff,color:#312e81,stroke:#818cf8;
+    classDef service fill:#ecfdf5,color:#064e3b,stroke:#34d399;
+    classDef approval fill:#fffbeb,color:#78350f,stroke:#fbbf24;
+    classDef external fill:#f8fafc,color:#334155,stroke:#94a3b8;
+    classDef local fill:#faf5ff,color:#581c87,stroke:#c084fc,stroke-dasharray:4 3;
+    class WEB interface;
+    class AGENT,MODEL,LIVE intelligence;
+    class CALL service;
+    class APPS approval;
+    class CLAWOPS,PHONE,GOOGLE external;
+    class LOCAL local;
+    style SERVER fill:#f8fafc,stroke:#cbd5e1,color:#334155
+```
+
+DeepAgents 노드는 메인 채팅과 통화 업무의 **별도 실행**을 함께 나타낸다. 두 실행은 같은
+팩토리와 텍스트 모델 설정을 사용한다. 전화 음성은 GPT-Live와 직접 주고받으며, Google 쓰기
+작업은 사용자가 확인 카드를 승인한 뒤 실행한다. 점선은 SQLite 저장과 선택적 로컬 Langfuse
+추적 경로이며, Langfuse에는 대화 원문 대신 실행 메타데이터만 전송한다.
+모듈별 책임과 실제 파일 위치는 [코드 구조 안내](docs/code-structure.md)에 정리했다.
+
 ## 시작하기
 
 Python **3.12**, uv, Node.js **24 LTS**(24–26 지원), npm을 사용한다.
