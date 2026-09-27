@@ -335,6 +335,8 @@ class DelegationCoordinator:
                     row["conversation_id"], row["source_user_message_id"], self.call_id
                 ):
                     result = await self.runner(context, tools)
+                if end_request:
+                    await self.db(self.store.event, self.call_id, "end_final_answer_ready", {})
                 async with self.control_lock:
                     if await valid():
                         if end_request and end_input_revision != getattr(
@@ -367,6 +369,13 @@ class DelegationCoordinator:
                         )
                         await self.db(self.store.finish, self.call_id, did, revision, "failed")
         except asyncio.CancelledError:
+            if end_request:
+                await self.db(
+                    self.store.event,
+                    self.call_id,
+                    "end_decision_canceled",
+                    {"reason": "task_canceled"},
+                )
             raise
         except Exception as exc:
             await self.db(

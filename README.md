@@ -297,8 +297,10 @@ Langfuse에서 `main-chat`, `call-delegation`, `call-completion-review` 실행 �
 완료를 보증하지 않는다. 반환된 `error` 및 도구 예외는 오류로 표시한다.
 
 SDK가 백그라운드로 전송하고 수집 오류를 업무 실행에 전파하지 않는다. 수집 장애 중의 기록을
-로컬 디스크에 재전송용으로 보존하지 않으므로 누락될 수 있다. 전체 통화 수명/Live 음성 패킷,
-확인 카드에서 실행하는 Google 쓰기 작업 자체는 이번 추적 범위에 포함하지 않는다.
+로컬 디스크에 재전송용으로 보존하지 않으므로 누락될 수 있다. 종료 단계는 `call.end_tool_requested`, `call.farewell_commands_acked`,
+`call.end_playback_finished`, `call.carrier_end_confirmed` 등의 관측으로 확인한다.
+재생 상태는 음성 활동과 ACK 기반의 추정이다. 실제 발화·청취 성공을 뜻하지 않는다.
+Live 음성 패킷과 확인 카드에서 실행하는 Google 쓰기 작업 자체는 추적 범위에 포함하지 않는다.
 
 발신·외부 모델 호출 없는 합성 DeepAgents 그래프 수집 검증:
 

@@ -234,3 +234,105 @@ def trace_execution(kind, model_name, tool_names, *, identity=None):
     finally:
         if callback:
             callback.close(status)
+
+
+CALL_EVENTS = frozenset(
+    {
+        "end_tool_requested",
+        "end_final_answer_ready",
+        "end_decision_canceled",
+        "end_decision_discarded",
+        "end_requested",
+        "end_canceled",
+        "farewell_commands_started",
+        "farewell_commands_acked",
+        "farewell_commands_failed",
+        "end_playback_finished",
+        "completion_review_finished",
+        "completion_review_discarded",
+        "call_connection_exit",
+        "carrier_hangup_requested",
+        "carrier_hangup_returned",
+        "carrier_hangup_failed",
+        "carrier_end_confirmed",
+        "carrier_end_unconfirmed",
+    }
+)
+_EVENT_ENUMS = {
+    "reason": {
+        "goal_achieved",
+        "recipient_declined",
+        "unable_to_continue",
+        "caller_resumed",
+        "caller_audio_resumed",
+        "output_cleared",
+        "context_changed",
+        "task_canceled",
+    },
+    "status": {
+        "audio_drained",
+        "playback_unconfirmed",
+        "active",
+        "completed",
+        "failed",
+        "busy",
+        "no_answer",
+        "canceled",
+        "ringing",
+        "queued",
+        "unknown",
+    },
+    "trigger": {"media", "user_stop", "carrier", "time_limit", "playback_ready", "cleanup"},
+}
+_EVENT_NUMBERS = frozenset(
+    {
+        "wait_ms",
+        "voice_end_bytes",
+        "acked_bytes",
+        "pending_voice_packets",
+        "queued_packets",
+        "buffer_bytes",
+        "output_quiet_ms",
+        "input_quiet_ms",
+        "elapsed_ms",
+        "attempt",
+    }
+)
+
+
+def record_call_event(row, kind, content):
+    """Export an allowlisted milestone; never arbitrary SQLite event content."""
+    if kind not in CALL_EVENTS:
+        return
+    try:
+        client = get_trace_client()
+        if client is None:
+            return
+        from langfuse import propagate_attributes
+
+        metadata = {"call_ref": trace_id(row["id"])}
+        for key, allowed in _EVENT_ENUMS.items():
+            value = content.get(key)
+            if isinstance(value, str) and value in allowed:
+                metadata[key] = value
+        for key in _EVENT_NUMBERS:
+            value = content.get(key)
+            if type(value) in (int, float) and 0 <= value <= 10**12:
+                metadata[key] = value
+        if type(content.get("end_requested")) is bool:
+            metadata["end_requested"] = content["end_requested"]
+        with propagate_attributes(
+            session_id=trace_id(row["conversation_id"]), trace_name="agent-request"
+        ):
+            span = client.start_observation(
+                name="call." + kind,
+                as_type="span",
+                trace_context={"trace_id": trace_id(row["source_user_message_id"])},
+                metadata=metadata,
+                level="WARNING"
+                if kind.endswith(("failed", "unconfirmed", "canceled"))
+                else "DEFAULT",
+            )
+        span.end()
+    except Exception:
+        pass  # Carrier control must not depend on telemetry availability.

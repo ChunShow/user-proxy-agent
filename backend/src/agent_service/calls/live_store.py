@@ -5,6 +5,7 @@ import time
 from uuid import uuid4
 
 from agent_service.calls.instructions import conditions_ready
+from agent_service.observability import CALL_EVENTS, record_call_event
 from agent_service.storage import StoreError
 
 
@@ -233,6 +234,9 @@ class LiveStore:
     def event(self, call, kind, content):
         with self.db.connection() as db:
             self._event(db, call, kind, content)
+            row = self.calls._get(db, call) if kind in CALL_EVENTS else None
+        if row:
+            record_call_event(row, kind, content)
 
     def activity(self, owner, call, after=0):
         with self.db.connection() as db:

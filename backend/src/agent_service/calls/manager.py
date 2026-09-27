@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import sqlite3
+import time
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -267,11 +268,16 @@ class CallManager:
                 tasks, timeout=seconds, return_when=asyncio.FIRST_COMPLETED
             )
             if not done:
+                await self.audit(call_id, "call_connection_exit", {"trigger": "time_limit"})
                 await self.db(self.store.update, call_id, error_code="call_time_limit")
             if tasks[0] in done:
+                await self.audit(call_id, "call_connection_exit", {"trigger": "media"})
                 return tasks[0].result()
             if tasks[2] in done:
+                await self.audit(call_id, "call_connection_exit", {"trigger": "carrier"})
                 tasks[2].result()
+            elif tasks[1] in done:
+                await self.audit(call_id, "call_connection_exit", {"trigger": "user_stop"})
             return {}
         finally:
             for task in tasks:
@@ -347,6 +353,12 @@ class CallManager:
                     finally:
                         self.reports.pop(call_id, None)
 
+    async def audit(self, call_id, kind, content):
+        try:
+            await self.db(LiveStore(self.store).event, call_id, kind, content)
+        except Exception:
+            pass
+
     async def _finish(self, gateway, call_id, external_id, report=None):
         await self.db(InstructionStore(self.store).abort, call_id, "call_ended")
         lock = self.locks.setdefault(call_id, asyncio.Lock())
@@ -406,7 +418,42 @@ class CallManager:
                     except ProviderFailure:
                         snapshot = None
                     if snapshot is None or snapshot.status not in CARRIER_TERMINAL:
-                        snapshot = await gateway.hangup(external_id)
+                        trigger = (
+                            "user_stop"
+                            if row["stop_requested"]
+                            else "playback_ready"
+                            if end.get("status") in {"played", "audio_drained"}
+                            else "cleanup"
+                        )
+                        await self.audit(
+                            call_id,
+                            "carrier_hangup_requested",
+                            {
+                                "trigger": trigger,
+                                "attempt": attempt + 1,
+                            },
+                        )
+                        started = time.monotonic()
+                        try:
+                            snapshot = await gateway.hangup(external_id)
+                        except ProviderFailure:
+                            await self.audit(
+                                call_id,
+                                "carrier_hangup_failed",
+                                {
+                                    "attempt": attempt + 1,
+                                    "elapsed_ms": round((time.monotonic() - started) * 1000),
+                                },
+                            )
+                            raise
+                        await self.audit(
+                            call_id,
+                            "carrier_hangup_returned",
+                            {
+                                "status": snapshot.status,
+                                "elapsed_ms": round((time.monotonic() - started) * 1000),
+                            },
+                        )
                     if snapshot.status in CARRIER_TERMINAL:
                         # A failed/busy call cannot establish a successful conversation.
                         if snapshot.status != "completed" and outcome == "model_reported_success":
@@ -425,6 +472,9 @@ class CallManager:
                             outcome=outcome,
                             error_code=error_code,
                         )
+                        await self.audit(
+                            call_id, "carrier_end_confirmed", {"status": snapshot.status}
+                        )
                         return
                 except ProviderFailure:
                     pass
@@ -437,6 +487,7 @@ class CallManager:
                 outcome="pending",
                 error_code="call_end_unconfirmed",
             )
+            await self.audit(call_id, "carrier_end_unconfirmed", {})
 
     async def refresh(self, owner, call_id):
         call = await self.get(owner, call_id)

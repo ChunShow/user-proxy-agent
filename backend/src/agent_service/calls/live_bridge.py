@@ -237,14 +237,23 @@ class LiveBridge:
             "heard_output": False,
         }
         await self.audit("end_requested", {"reason": reason})
-        await self.command(
-            "session.thinking.append", "백엔드 확인이 끝났습니다. 사용자 답변 대기를 마칩니다."
-        )
-        await self.command(
-            "session.instructions.append",
-            "먼저 다음 확인 결과를 한국어로 전달하세요: " + spoken_result + "\n"
-            "그 뒤 짧게 통화를 마치는 인사를 하세요. "
-            "새로운 질문을 하지 말고 인사 후에는 말하지 마세요.",
+        started = time.monotonic()
+        await self.audit("farewell_commands_started", {})
+        try:
+            await self.command(
+                "session.thinking.append", "백엔드 확인이 끝났습니다. 사용자 답변 대기를 마칩니다."
+            )
+            await self.command(
+                "session.instructions.append",
+                "먼저 다음 확인 결과를 한국어로 전달하세요: " + spoken_result + "\n"
+                "그 뒤 짧게 통화를 마치는 인사를 하세요. "
+                "새로운 질문을 하지 말고 인사 후에는 말하지 마세요.",
+            )
+        except Exception:
+            await self.audit("farewell_commands_failed", {})
+            raise
+        await self.audit(
+            "farewell_commands_acked", {"elapsed_ms": round((time.monotonic() - started) * 1000)}
         )
         return {"status": "pending_farewell_playback"}
 
