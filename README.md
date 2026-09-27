@@ -342,3 +342,28 @@ uv run python ../scripts/check_langfuse_tracing.py --run
 이 worker는 단일 backend 프로세스용이다. 실제 텍스트 모델·합성 통화·브라우저로 검증했으며,
 본인 실회선 1회에서도 자동 표시·새로고침 복원·중복 없음과 추적 연결을 확인했다.
 일반 `./scripts/check.sh`는 로컬 `.env`를 읽지 않는다.
+
+
+### 전화 없는 한국어 음성 비교
+
+기본 Live 지시는 끼어들기 양보, 절제된 맞장구, 일상적인 한국어 존댓말과 숫자 읽기를 포함한다.
+`CALL_LIVE_VOICE`는 `marin`(기본), `gleam`, `meridian`을 지원한다.
+음성의 한국어 선호도는 실제 청취로 비교해야 하며 기본 음성은 임의로 바꾸지 않았다.
+
+프로젝트 루트에서 Python 3.12/macOS의 Yuna로 합성 입력을 만들고 실제 Live API를 시험한다.
+각 `--run`은 유료 모델 세션 1회이며, ClawOps·Google에 연결하거나 전화를 걸지 않는다.
+
+```sh
+uv run --project backend python scripts/check_live_korean.py --prepare
+uv run --project backend python scripts/check_live_korean.py --run --name korean-baseline --prompt baseline
+uv run --project backend python scripts/check_live_korean.py --run --name korean-current --prompt current
+uv run --project backend python scripts/check_live_korean.py --run --name korean-gleam --voice gleam
+```
+
+`--scenario`는 `correction`, `backchannel`, `none`; 세션은 기본 42초, 최대 45초다.
+같은 이름으로 덮어쓰지 않는다. `var/korean-live-lab/<name>/`에 입력/모델 원본/중계 출력 WAV,
+실제 적용 지시와 이벤트·전사·계측 JSON이 저장된다. `baseline`은 개선 전 지시의 고정본이고
+`current`는 실행 시 제품 지시다. `candidate`는 이번에 비교한 지시를 고정한 재현용이다.
+음성 출력은 실제 모델이 생성하지만 입력은 합성이고 회선 ACK·위임 답변은 모사다.
+저음량 구간과 전사는 자연스러움이나 의미 있는 양보의 확정 판정이 아니다.
+[이번 비교 결과와 제한](docs/research/2026-09-27-live-korean-experiment.md)을 참고한다.

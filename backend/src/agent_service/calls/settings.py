@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from agent_service.calls.carrier import DOMESTIC, ClawOpsSettings
+from agent_service.calls.live import LIVE_VOICES
 from agent_service.calls.realtime import realtime_url
 from agent_service.calls.types import ProviderFailure
 from agent_service.settings import ROOT
@@ -66,7 +67,11 @@ class CallSettings:
             mode = values.get("CALL_AUDIO_MODE", "realtime")
             live_model = values.get("CALL_LIVE_MODEL", "gpt-live-1")
             voice = values.get("CALL_LIVE_VOICE", "marin")
-            if mode not in {"realtime", "live"} or live_model != "gpt-live-1" or voice != "marin":
+            if (
+                mode not in {"realtime", "live"}
+                or live_model != "gpt-live-1"
+                or voice not in LIVE_VOICES
+            ):
                 raise ValueError
             return cls(carrier, base, key, model, allowed, seconds, mode, live_model, voice)
         except (OSError, ValueError, TypeError, AttributeError):
