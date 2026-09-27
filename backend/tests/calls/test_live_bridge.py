@@ -241,6 +241,7 @@ async def ending_bridge(monkeypatch):
         await until(lambda: bridge.generated_bytes == before + len(raw))
 
     async def ack():
+        await until(lambda: any(e["event"] == "mark" for e in media.sent))
         marks = [e for e in media.sent if e["event"] == "mark"]
         assert marks, "The final voiced packet must be marked even below 100ms."
         await media.input.put(marks[-1])

@@ -367,3 +367,14 @@ uv run --project backend python scripts/check_live_korean.py --run --name korean
 음성 출력은 실제 모델이 생성하지만 입력은 합성이고 회선 ACK·위임 답변은 모사다.
 저음량 구간과 전사는 자연스러움이나 의미 있는 양보의 확정 판정이 아니다.
 [이번 비교 결과와 제한](docs/research/2026-09-27-live-korean-experiment.md)을 참고한다.
+
+저장된 모델 도착 기록을 기존/현재 재생 방식으로 다시 비교할 수 있다. 아래 명령은
+API·전화·DB에 연결하지 않는다. Python 3.12의 별도 프로세스로 실행하며 원본 기록이 필요하다.
+
+```sh
+uv run --project backend python scripts/replay_live_audio.py
+```
+
+`var/korean-live-replay/`의 새 디렉터리에 전후 WAV·패킷 시각·공급 공백·추가 지연과
+전체 바이트 보존 여부를 저장한다. 이는 가상 수신 시계 검증이며 실제 ClawOps 재생의
+보장은 아니다. [중계 개선 결과와 지연 비용](docs/superpowers/plans/2026-09-27-live-playout-continuity.md)을 참고한다.

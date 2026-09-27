@@ -167,10 +167,33 @@ class LiveBridge:
     async def play(self):
         await self.ready.wait()
         deadline = time.monotonic()
+        quiet_seconds, paced_epoch, reserved_generation = 0.0, -1, -1
         while True:
             packet = await self.output.get()
             epoch = self.output_epoch
             voiced = has_sound(packet)
+            # Build a small jitter reserve at startup or in established quiet only.
+            # After startup, refill low-energy packets only; preserve every sample.
+            # No lock is held while waiting, so clear and cancellation stay responsive.
+            if epoch != paced_epoch or (
+                not voiced
+                and quiet_seconds >= 0.2
+                and self.output.qsize() < 3
+                and self.generated_bytes != reserved_generation
+            ):
+                started = time.monotonic()
+                until = started + 0.12
+                for _ in range(12):
+                    if self.output.qsize() >= 6 or epoch != self.output_epoch:
+                        break
+                    remaining = until - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    await asyncio.sleep(min(0.01, remaining))
+                reserved_generation = self.generated_bytes
+                if time.monotonic() > started:
+                    # Intentional reserve must not be immediately spent by catch-up bursts.
+                    deadline = time.monotonic()
             deadline = max(deadline, time.monotonic() - 0.1)
             async with self.phone_lock:
                 if epoch != self.output_epoch:
@@ -180,6 +203,8 @@ class LiveBridge:
                 )
                 self.stamp("audio_sent_first_ms")
                 self.sent_bytes += len(packet)
+                paced_epoch = epoch
+                quiet_seconds = 0.0 if voiced else quiet_seconds + len(packet) / 8000
                 if voiced:
                     self.pending_voice = max(0, self.pending_voice - 1)
                     self.voice_end_bytes = self.sent_bytes
