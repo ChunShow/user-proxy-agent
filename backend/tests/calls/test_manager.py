@@ -244,15 +244,11 @@ async def test_restart_never_dials_and_unknown_is_not_cleared(tmp_path):
     await m.shutdown()
 
 
-async def test_guessed_number_and_no_explicit_request_cannot_dial(tmp_path):
+async def test_guessed_number_cannot_create_card(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     with pytest.raises(StoreError) as e:
         await approved_start(m, o, c, u, spec(destination="01000000002"))
-    assert e.value.code == "call_request_required"
-    uid = add_user(db, o, c, "통화 요금은 얼마야?")["user_message_id"]
-    with pytest.raises(StoreError) as e:
-        await approved_start(m, o, c, uid, spec())
-    assert e.value.code == "call_request_required"
+    assert e.value.code == "call_number_required"
     assert g.dials == 0
 
 
@@ -352,13 +348,12 @@ async def test_call_request_accepts_constraints_on_the_conversation(tmp_path, co
         "01000000001로 통화 연결하지 말아 주세요.",
         "01000000001로 전화 걸어주지 마세요.",
         "01000000001로 전화 안 걸어줘도 돼.",
-        "01000000001 통화 요금은 얼마야?",
     ],
 )
 async def test_call_request_still_rejects_direct_prohibitions(tmp_path, user_request):
     m, g, db, s, o, c, u = manager(tmp_path)
     uid = add_user(db, o, c, user_request)["user_message_id"]
-    with pytest.raises(StoreError, match="call_request_required"):
+    with pytest.raises(StoreError, match="call_request_canceled"):
         await approved_start(m, o, c, uid, spec())
     assert g.dials == 0
 

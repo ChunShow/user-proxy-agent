@@ -244,3 +244,65 @@ async def test_result_lookup_treats_invalid_end_evidence_as_unknown(tmp_path, ra
     assert result["end_evidence"] == {"reason": None, "playback_status": None}
     assert result["transcript"]["entries"] == []
     assert g.dials == 0
+
+
+@pytest.mark.parametrize(
+    "answer", ["내일", "김테스트", "다시 해줘", "01000000001로 걸어줘", "다시 전화해"]
+)
+async def test_followup_answer_can_create_card_without_provider_work(tmp_path, answer):
+    m, g, db, s, o, c, _ = manager(tmp_path)
+    uid = add_user(db, o, c, answer)["user_message_id"]
+    tool = build_call_tools(CallContext(m, o, c, uid))[0]
+    try:
+        result = await tool.ainvoke(spec().model_dump())
+        assert result.get("status") == "awaiting_approval", result
+        duplicate = await tool.ainvoke(spec().model_dump())
+        assert duplicate["call_id"] == result["call_id"]
+        row = s.record(result["call_id"])
+        assert row["approved_at"] is None and row["dial_attempted_at"] is None
+        assert not s.claim_dial(result["call_id"])
+        assert len(s.list(o, c)["items"]) == 1
+        assert not m.tasks and g.dials == 0 and not g.closed
+    finally:
+        await m.shutdown()
+
+
+async def test_card_failure_explains_missing_number_without_requesting_magic_phrase(tmp_path):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    tool = build_call_tools(CallContext(m, o, c, u))[0]
+    result = await tool.ainvoke(spec(destination="01000000002").model_dump())
+    assert result["error"] == "call_number_required"
+    assert result["stage"] == "approval_card" and result["call_started"] is False
+    assert "번호" in result["guidance"]
+    assert s.list(o, c)["items"] == [] and g.dials == 0
+    await m.shutdown()
+
+
+async def test_followup_cannot_use_other_owner_or_assistant_supplied_number(tmp_path):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    # Only assistant text contains the proposed destination.
+    with db.connection() as conn:
+        conn.execute(
+            "UPDATE messages SET text=? WHERE conversation_id=? AND role='assistant'",
+            ("01000000002", c),
+        )
+    uid = add_user(db, o, c, "내일")["user_message_id"]
+    tool = build_call_tools(CallContext(m, o, c, uid))[0]
+    result = await tool.ainvoke(spec(destination="01000000002").model_dump())
+    assert result["error"] == "call_number_required"
+    other = build_call_tools(CallContext(m, "other", c, uid))[0]
+    assert (await other.ainvoke(spec().model_dump()))["error"] == "not_found"
+    assert s.list(o, c)["items"] == [] and g.dials == 0
+    await m.shutdown()
+
+
+async def test_followup_duplicate_in_new_turn_explains_existing_card(tmp_path):
+    m, g, db, s, o, c, u = manager(tmp_path)
+    first = await build_call_tools(CallContext(m, o, c, u))[0].ainvoke(spec().model_dump())
+    uid = add_user(db, o, c, "다시 해줘")["user_message_id"]
+    result = await build_call_tools(CallContext(m, o, c, uid))[0].ainvoke(spec().model_dump())
+    assert result["error"] == "call_busy"
+    assert "기존" in result["guidance"] and result["call_started"] is False
+    assert [row["id"] for row in s.list(o, c)["items"]] == [first["call_id"]]
+    assert g.dials == 0
+    await m.shutdown()

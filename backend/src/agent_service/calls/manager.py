@@ -73,22 +73,23 @@ async def open_gateway(settings):
         yield Gateway(settings, client)
 
 
-def requested_number(current, texts, destination):
-    # The LLM resolves intent, while the server requires an explicit call imperative
-    # in this user turn and a literal number in user-authored conversation text.
-    # Match a prohibition of the call action, not a constraint on the conversation
-    # such as "통화 가능한지는 추측하지 말고 확인해줘".
-    if re.search(
-        r"(?:전화|통화)(?:를|는|도|은)?\s*"
-        r"(?:(?:절대|다시|아직|지금|오늘|내일|당장은|이제|함부로)\s*)*"
-        r"(?:(?:연결|시작)?\s*하지|걸지|걸어\s*주지|해\s*주지|안\s*(?:걸|해)|말아|말고|금지)",
-        current,
-    ):
-        return False
-    if not re.search(
-        r"(전화|통화).{0,80}(걸어|줘|주세요|해\s*주|진행|시작|부탁|해라)", current, re.S
-    ) and not re.search(r"\bcall\b.{0,40}\b(please|now)\b", current, re.I):
-        return False
+def call_is_prohibited(current):
+    # A direct prohibition can reject a proposal; it is not a general intent parser.
+    # Do not confuse constraints such as "예약은 하지 말고 시간만 물어봐" with no call.
+    return bool(
+        re.search(
+            r"(?:전화|통화)(?:를|는|도|은)?\s*"
+            r"(?:(?:절대|다시|아직|지금|오늘|내일|당장은|이제|함부로)\s*)*"
+            r"(?:(?:연결|시작)?\s*하지|걸지|걸어\s*주지|해\s*주지|안\s*(?:걸|해)|말아|말고|금지)",
+            current,
+        )
+    )
+
+
+def user_provided_number(texts, destination):
+    # Intent and clarification answers are resolved by the main conversation agent.
+    # This only grounds a reversible proposal in user-authored numbers. Actual
+    # dialing is separately authorized by the owner's versioned approval button.
     for text in texts:
         for candidate in re.findall(r"(?<![\d+])(?:\+82[ ()-]*|0|1)[\d ()-]{6,24}\d(?!\d)", text):
             try:
@@ -187,8 +188,10 @@ class CallManager:
     async def _register(self, owner, cid, uid, spec):
         self.settings_loader()
         current, texts = await self.db(self.store.user_texts, owner, cid, uid)
-        if not requested_number(current, texts, spec.destination):
-            raise StoreError("call_request_required", 422)
+        if call_is_prohibited(current):
+            raise StoreError("call_request_canceled", 422)
+        if not user_provided_number(texts, spec.destination):
+            raise StoreError("call_number_required", 422)
         return await self.db(self.store.register, owner, cid, uid, spec)
 
     async def approve(self, owner, call_id, expected_version):
@@ -533,9 +536,9 @@ class CallManager:
                 call_id,
                 status="unknown" if uncertain else "canceled",
                 outcome="pending" if uncertain else "canceled",
-                error_code="call_delivery_unknown" if uncertain else (
-                    "call_approval_canceled" if row["status"] == "awaiting_approval" else None
-                ),
+                error_code="call_delivery_unknown"
+                if uncertain
+                else ("call_approval_canceled" if row["status"] == "awaiting_approval" else None),
             )
             return
         try:

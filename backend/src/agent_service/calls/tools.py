@@ -62,7 +62,10 @@ def build_call_tools(context: CallContext):
     async def start_phone_call(**arguments) -> dict:
         """사용자가 요청한 번호·목적·질문으로 발신 승인 카드를 만든다. 아직 전화하지 않는다.
 
-        목적·번호가 부족하면 먼저 사용자에게 묻는다. 사용자 메시지에 없는 번호를 추측하지 않는다.
+        같은 대화의 이전 전화 요청과 이후 이름·날짜 등 확인 답변을 함께 사용한다.
+        마지막 답변에 전화 명령어를 반복하도록 요구하지 않는다. 목적·번호가 부족하면 묻는다.
+        사용자 메시지에 없는 번호를 추측하지 않는다. 취소·단순 문의·별개 업무에는 만들지 않는다.
+        기존 승인 대기 카드가 있으면 먼저 조회·안내하고 중복 생성하지 않는다.
         사용자가 웹 카드의 승인 버튼을 눌러야 발신한다. 채팅 동의로 승인할 수 없다.
         접수는 연결/목표 달성의 증거가 아니다. 실패/unknown을 자동 재발신하지 않는다.
         """
@@ -76,7 +79,35 @@ def build_call_tools(context: CallContext):
             )
             return {"call_id": call["id"], "status": call["status"], "purpose": call["purpose"]}
 
-        return await guarded(start)
+        result = await guarded(start)
+        if "error" in result:
+            guidance = {
+                "call_number_required": (
+                    "사용자 대화에서 대상 번호를 확인할 수 없습니다. 번호만 확인하세요."
+                ),
+                "call_request_canceled": (
+                    "현재 사용자가 전화를 금지했습니다. 카드를 만들거나 다시 시도하지 마세요."
+                ),
+                "call_busy": (
+                    "기존 승인 대기 또는 진행 중 통화가 있습니다. "
+                    "현재 대화의 기록을 확인하고 기존 카드를 안내하세요."
+                ),
+                "call_request_conflict": (
+                    "같은 요청으로 이미 저장된 카드가 있습니다. "
+                    "기존 내용을 조회하고 변경이 필요한지 확인하세요."
+                ),
+                "invalid_call_request": (
+                    "카드 내용의 형식이 올바르지 않습니다. 부족한 항목만 확인하세요."
+                ),
+                "calls_not_configured": (
+                    "서버 통화 설정을 확인해야 합니다. 사용자에게 전화 요청을 반복시키지 마세요."
+                ),
+            }.get(
+                result["error"],
+                "카드 저장을 완료하지 못했습니다. 실제 발신 실패와 구분해 안내하세요.",
+            )
+            return result | {"stage": "approval_card", "call_started": False, "guidance": guidance}
+        return result
 
     @tool
     async def get_phone_call(call_id: str) -> dict:
