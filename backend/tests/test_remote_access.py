@@ -4,7 +4,7 @@ from agent_service.remote_access import AccessConfig, create_app
 
 
 def client():
-    app = create_app(AccessConfig("https://share.example", "test-password", b"x" * 32))
+    app = create_app(AccessConfig("https://share.example", "test!", b"x" * 32))
     return TestClient(app, base_url="https://share.example", follow_redirects=False)
 
 
@@ -16,7 +16,7 @@ def test_anonymous_navigation_gets_form_without_http_auth_popup():
         r = c.get("/_access/login")
         assert r.status_code == 200
         assert "<form" in r.text and 'type="password"' in r.text
-        assert "test-password" not in r.text
+        assert "test!" not in r.text
         assert r.headers["cache-control"] == "no-store"
         assert (
             c.get("/_access/verify", headers={"x-forwarded-uri": "/api/health"}).status_code == 401
@@ -28,7 +28,7 @@ def test_password_login_secure_cookie_verify_logout_and_origin():
         assert (
             c.post(
                 "/_access/login",
-                data={"password": "test-password"},
+                data={"password": "test!"},
                 headers={"origin": "https://evil.example"},
             ).status_code
             == 403
@@ -44,7 +44,7 @@ def test_password_login_secure_cookie_verify_logout_and_origin():
         assert c.get("/_access/verify").status_code == 303
         r = c.post(
             "/_access/login",
-            data={"password": "test-password"},
+            data={"password": "test!"},
             headers={"origin": "https://share.example"},
         )
         assert r.status_code == 303 and r.headers["location"] == "/"
@@ -81,6 +81,6 @@ def test_login_attempts_are_bounded_and_body_is_limited():
             assert (
                 c.post("/_access/login", data={"password": "wrong"}, headers=h).status_code == 200
             )
-        r = c.post("/_access/login", data={"password": "test-password"}, headers=h)
+        r = c.post("/_access/login", data={"password": "test!"}, headers=h)
         assert r.status_code == 429
         assert "retry-after" in r.headers

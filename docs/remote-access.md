@@ -12,7 +12,7 @@ Cloudflare → loopback Caddy(5188) → 인증 서비스(5189) / 제품 API(9010
 Git 제외 비공개 JSON 파일에 다음 필드를 설정하고 `chmod 600`으로 권한을 제한한다.
 
 - `origin`: 공유 HTTPS origin. 경로와 마지막 `/`는 제외한다.
-- `password`: 공유 비밀번호(최소 12자).
+- `password`: 공유 비밀번호(최소 5자).
 - `signing_key`: 임의 32바이트 이상의 키를 hex로 표현한 값.
 
 `backend`에서 실행한다.

@@ -38,7 +38,7 @@ class AccessConfig:
             or url.fragment
             or url.username
             or url.password
-            or len(self.password) < 12
+            or len(self.password) < 5
             or len(self.signing_key) < 32
         ):
             raise ValueError("Invalid private sharing configuration")
