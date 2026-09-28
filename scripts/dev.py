@@ -78,6 +78,13 @@ def main() -> int:
                          "--host", "127.0.0.1", "--port", str(backend_port)], ROOT / "backend"),
             ("web", [node, str(vite)], ROOT / "web"),
         ]
+        if os.environ.get("VIRTUAL_ARS_ENABLED", "1") == "1":
+            from virtual_ars_process import configuration
+
+            check_port(9020)
+            ars_environment, ars_command = configuration()
+            environment.update(ars_environment)
+            commands.insert(0, ars_command)
         for name, command, directory in commands:
             if stopping:
                 return 0
@@ -86,12 +93,12 @@ def main() -> int:
             )
             children.append((name, child))
             print(f"{name} pid={child.pid}", flush=True)
-        print(f"Web: http://127.0.0.1:{web_port} · Ctrl-C stops both servers", flush=True)
+        print(f"Web: http://127.0.0.1:{web_port} · Ctrl-C stops these servers", flush=True)
         while not stopping:
             for name, child in children:
                 if child.poll() is not None:
                     print(
-                        f"{name} exited ({child.returncode}); stopping both servers",
+                        f"{name} exited ({child.returncode}); stopping these servers",
                         file=sys.stderr,
                     )
                     return 1

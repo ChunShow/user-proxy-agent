@@ -50,7 +50,7 @@ export default function ConversationList({ items, selectedId, error, hasMore, on
     <div className="conversation-items">
       {items.map(item => <div key={item.id} className={`conversation-row ${item.id === selectedId ? 'selected' : ''}`}>
         <button type="button" title={item.title} className="conversation-link"
-          aria-current={item.id === selectedId ? 'page' : undefined} onClick={() => onSelect(item.id)}>{item.title}</button>
+          aria-current={item.id === selectedId ? 'page' : undefined} onClick={() => onSelect(item.id)}><span className="conversation-title">{item.title}</span>{item.mode === 'simulation' && <span className="conversation-mode">가상 통화</span>}</button>
         <details className="conversation-options" onToggle={event => {
           if (event.currentTarget.open) event.currentTarget.querySelector('.conversation-menu')?.scrollIntoView({ block: 'nearest' })
         }}>

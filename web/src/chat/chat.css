@@ -317,3 +317,9 @@
 .simulation-notice { flex-shrink: 0; margin: 0; padding: 10px 24px; border-block: 1px solid var(--line); background: var(--canvas); color: var(--muted); font-size: 13px; line-height: 1.7; }
 .simulation-notice strong { color: var(--ink); font-weight: 600; }
 .simulation-notice span { display: inline-block; margin-left: 12px; }
+
+.sidebar nav { min-height: 0; }
+.debug-conversation { flex-shrink: 0; margin-top: auto; margin-bottom: 0; }
+.conversation-link .conversation-title { display: block; overflow: hidden; text-overflow: ellipsis; }
+.conversation-mode { display: block; margin-top: 3px; font-size: 10px; font-weight: 400; color: var(--muted); }
+.call-mode { display: inline-block; margin-left: 10px; font-size: 12px; color: var(--muted); }

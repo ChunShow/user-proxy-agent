@@ -3,7 +3,8 @@ import { request } from '../api/request'
 
 import type { ChatMessage } from './types'
 
-export interface Conversation { id: string; title: string; updated_at: string }
+export type ConversationMode = 'real' | 'simulation'
+export interface Conversation { id: string; title: string; updated_at: string; mode?: ConversationMode }
 export interface ConversationPage { items: Conversation[]; next_cursor: string | null }
 export interface SavedConversation {
   conversation: Conversation
@@ -12,7 +13,7 @@ export interface SavedConversation {
 }
 export const prepareSession = () => request<void>('/api/session', {})
 export const listConversations = (cursor?: string) => request<ConversationPage>(`/api/conversations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`)
-export const createConversation = (id: string, signal: AbortSignal) => request<Conversation>('/api/conversations', { conversation_id: id }, signal)
+export const createConversation = (id: string, signal: AbortSignal, mode: ConversationMode = 'real') => request<Conversation>('/api/conversations', { conversation_id: id, mode }, signal)
 export async function getConversation(id: string, before?: string): Promise<SavedConversation> {
   const data = await request<SavedConversation>(`/api/conversations/${encodeURIComponent(id)}${before ? `?before=${encodeURIComponent(before)}` : ''}`)
   data.messages = data.messages.map(m => ({ ...m, status: m.role === 'assistant' ? m.status : undefined, error: m.error_code ? new ApiError(m.error_code).message : undefined }))

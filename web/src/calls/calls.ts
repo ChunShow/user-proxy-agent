@@ -17,6 +17,7 @@ export interface CallConfirmation {
   expires_at: number
 }
 export interface PhoneCall {
+  mode?: 'real' | 'simulation'
   id: string
   conversation_id: string
   source_user_message_id: string

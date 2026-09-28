@@ -79,8 +79,8 @@ uv run --project backend python scripts/check_live_korean.py --run --name korean
 
 ## 가상 ARS 개발 서버
 
-`backend/.venv/bin/python scripts/dev_simulator.py`를 저장소 루트에서 실행한다.
-독립 ARS API(9020), 디버그 백엔드(9011), 웹(5181)을 함께 시작/종료한다.
-`prepare_virtual_ars.py`는 macOS Yuna로 안내 음성을 생성하며 별도 TTS API가 필요 없다.
-기존 모델 API 호출 비용은 발생한다. 실제 전화·Google 연결은 사용하지 않는다.
-[자세한 실행 및 API 안내](../docs/virtual-ars.md).
+`./scripts/dev.sh`는 기존 웹(5180)·백엔드(9010)와 내부 ARS(9020)를 함께 시작한다.
+웹 좌측 하단 **디버깅**으로 가상 통화 대화를 만든다. `dev_simulator.py`는 같은 실행기의
+호환 진입점이며 별도 웹을 열지 않는다. ARS 제외 실행은 `VIRTUAL_ARS_ENABLED=0`을 지정한다.
+`prepare_virtual_ars.py`는 macOS Yuna로 안내 음성을 만들고 `virtual_ars_process.py`는
+내부 키와 자식 프로세스 설정을 준비한다. [자세한 안내](../docs/virtual-ars.md).

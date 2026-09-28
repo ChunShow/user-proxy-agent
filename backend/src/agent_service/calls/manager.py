@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import re
 import sqlite3
 import time
@@ -43,8 +44,21 @@ class Gateway(ModelAudioGateway, ClawOpsControl):
         return AgentConnection(self.settings)
 
 
+def simulation_settings():
+    return CallSettings.load(
+        simulation=True,
+        environ={**os.environ, "CALLS_ENABLED": "1", "CALL_AUDIO_MODE": "live"},
+    )
+
+
 @asynccontextmanager
 async def open_gateway(settings):
+    if settings.carrier is None:
+        from agent_service.simulator.gateway import open_simulator
+
+        async with open_simulator(settings) as gateway:
+            yield gateway
+        return
     async with httpx.AsyncClient(trust_env=False) as client:
         yield Gateway(settings, client)
 
@@ -161,8 +175,20 @@ class CallManager:
         task.add_done_callback(finished)
         return await asyncio.shield(task)
 
+    def settings_for(self, mode):
+        if mode == "simulation":
+            return simulation_settings()
+        if mode != "real":
+            raise ProviderFailure("invalid_call_mode")
+        return self.settings_loader()
+
+    async def conversation_mode(self, owner, cid):
+        result = await self.db(self.store.db.get_conversation, owner, cid)
+        return result["conversation"]["mode"]
+
     async def _register(self, owner, cid, uid, spec):
-        self.settings_loader()
+        mode = await self.conversation_mode(owner, cid)
+        self.settings_for(mode)
         current, texts = await self.db(self.store.user_texts, owner, cid, uid)
         if call_is_prohibited(current):
             raise StoreError("call_request_canceled", 422)
@@ -176,9 +202,9 @@ class CallManager:
         return await self._owned(self._approve(owner, call_id, expected_version))
 
     async def _approve(self, owner, call_id, expected_version):
-        await self.get(owner, call_id)
+        call = await self.get(owner, call_id)
         try:
-            settings = self.settings_loader()
+            settings = self.settings_for(call["mode"])
         except ProviderFailure:
             raise StoreError("calls_not_configured", 503) from None
         call, claimed = await self.db(self.store.approve, owner, call_id, expected_version)
@@ -221,8 +247,12 @@ class CallManager:
             await self.db(self.store.update, call_id, status="connected")
             bridge = gateway.bridge(model, spec)
             if isinstance(bridge, LiveBridge):
+                row = await self.db(self.store.record, call_id)
+                integrations = (
+                    None if row["mode"] == "simulation" else getattr(self, "integrations", None)
+                )
                 bridge.coordinator = DelegationCoordinator(
-                    self.store, call_id, bridge, integrations=getattr(self, "integrations", None)
+                    self.store, call_id, bridge, integrations=integrations
                 )
                 self.live_sessions[call_id] = bridge.coordinator
             try:
@@ -277,6 +307,19 @@ class CallManager:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run(self, call_id, settings, spec):
+        try:
+            await self._run_with_gateway(call_id, settings, spec)
+        except (ProviderFailure, ValueError):
+            row = await self.db(self.store.record, call_id)
+            if row["dial_attempted_at"] is None and row["status"] not in TERMINAL:
+                await self.db(
+                    self.store.update, call_id, status="failed", outcome="incomplete",
+                    error_code="call_setup_failed",
+                )
+            else:
+                raise
+
+    async def _run_with_gateway(self, call_id, settings, spec):
         external_id, report = None, {}
         async with self.gateway_factory(settings) as gateway:
             try:
@@ -518,7 +561,7 @@ class CallManager:
             )
             return
         try:
-            async with self.gateway_factory(self.settings_loader()) as gateway:
+            async with self.gateway_factory(self.settings_for(row["mode"])) as gateway:
                 await self._finish(gateway, call_id, row["provider_call_id"])
         except Exception:
             await self.db(

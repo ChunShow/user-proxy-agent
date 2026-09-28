@@ -13,6 +13,8 @@ import MessageList from './MessageList'
 import './chat.css'
 
 interface Props {
+  simulation: boolean
+  onNewDebugConversation: () => void
   messages: ChatMessage[]
   composer: ReactNode
   onRetry?: () => void
@@ -37,10 +39,9 @@ interface Props {
   callError?: ReactNode
 }
 
-export default function ChatView({ messages, composer, onRetry, onConversationsChanged,
+export default function ChatView({ simulation, onNewDebugConversation, messages, composer, onRetry, onConversationsChanged,
   conversationId, conversations, onNewConversation, onSelectConversation, listError, hasMoreConversations,
   onMoreConversations, onReloadList, loading, loadError, onReload, hasMoreMessages, onMoreMessages, pageError, remoteBusy, afterMessage, activeCall, callError }: Props) {
-  const simulation = import.meta.env.VITE_SIMULATION === '1'
   const sidebar = useSidebarWidth()
   const dialog = useRef<HTMLDialogElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
@@ -75,6 +76,7 @@ export default function ChatView({ messages, composer, onRetry, onConversationsC
     <button aria-label="새 대화" className="nav-item new-conversation" onClick={() => { onNewConversation(); closeMenu() }}><Icon name="newChat" /><span>새 대화</span></button>
     <ConversationList items={conversations} selectedId={conversationId} onChanged={onConversationsChanged} error={listError}
       hasMore={hasMoreConversations} onSelect={id => { onSelectConversation(id); closeMenu() }} onMore={onMoreConversations} onReload={onReloadList} />
+    <button type="button" className="nav-item debug-conversation" aria-label="디버깅 대화 만들기" title="가상 ARS로 새 대화" onClick={() => { onNewDebugConversation(); closeMenu() }}><Icon name="flask" /><span>디버깅</span></button>
   </nav>
   return <div className={`app-shell ${collapsed ? 'nav-collapsed' : ''}`} style={{ '--sidebar-width': `${sidebar.width}px` } as CSSProperties}>
     <aside id="desktop-sidebar" className="sidebar">
@@ -107,8 +109,8 @@ export default function ChatView({ messages, composer, onRetry, onConversationsC
         }}>
           <div className={`conversation ${isEmpty ? 'is-empty' : ''}`}>
             {isEmpty && <div className="empty-chat">
-              <h2>어떤 일을 도와드릴까요?</h2>
-              <p>확인하거나 부탁할 일을 편하게 적어 주세요.</p>
+              <h2>{simulation ? '가상 통화를 시험해 보세요' : '어떤 일을 도와드릴까요?'}</h2>
+              <p>{simulation ? '01000000001로 전화해 진료시간을 물어보세요. 실제 전화는 걸리지 않습니다.' : '확인하거나 부탁할 일을 편하게 적어 주세요.'}</p>
             </div>}
             {loading && <p className="conversation-notice" role="status">대화를 불러오고 있습니다.</p>}
             {loadError && <div className="conversation-notice"><p role="status">{loadError}</p><button type="button" onClick={onReload}>다시 불러오기</button></div>}
@@ -124,7 +126,7 @@ export default function ChatView({ messages, composer, onRetry, onConversationsC
             {pageError && <p className="conversation-notice" role="status">{pageError}</p>}
             {callError}
             <MessageList messages={messages} onRetry={onRetry} afterMessage={afterMessage} />
-            {conversationId && !loading && !loadError && <ActionCards key={conversationId} conversationId={conversationId} />}
+            {!simulation && conversationId && !loading && !loadError && <ActionCards key={conversationId} conversationId={conversationId} />}
             <div ref={bottom} />
           </div>
         </div>

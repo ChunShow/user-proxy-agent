@@ -6,20 +6,19 @@ from fastapi.testclient import TestClient
 
 from agent_service.calls.settings import CallSettings
 from agent_service.calls.types import DialRejected
-from agent_service.simulator.debug_app import create_debug_app
+from agent_service.main import create_app
 from agent_service.simulator.gateway import SimulatorConfig, SimulatorGateway
 
 
-def test_simulation_needs_no_clawops_and_has_separate_cookie(tmp_path, monkeypatch):
+def test_unified_app_can_load_simulation_without_clawops_credentials(tmp_path, monkeypatch):
     from agent_service.calls.manager import Gateway
 
     monkeypatch.setattr(Gateway, "__init__", lambda *a: pytest.fail("real carrier instantiated"))
     monkeypatch.setenv("SIMULATOR_TOKEN", "local-token-not-clawops-12345")
-    app = create_debug_app(database_path=tmp_path / "debug.db")
+    app = create_app(database_path=tmp_path / "debug.db")
     with TestClient(app) as c:
         assert c.post("/api/session", json={}).status_code == 204
-        assert c.cookies.get("proxy_simulator_session")
-        assert not c.cookies.get("proxy_session")
+        assert c.cookies.get("proxy_session")
         assert c.get("/api/integrations/google").json()["status"] == "not_configured"
         assert c.get("/api/calls/active").json()["items"] == []
     values = {

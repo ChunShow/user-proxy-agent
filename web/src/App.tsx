@@ -14,7 +14,7 @@ export default function App() {
     void syncCallResults(selectedId, phones.calls.flatMap(call => call.result_message_id ? [call.result_message_id] : []))
   }, [syncCallResults, selectedId, busy, phones.calls])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const draftKey = chat.selectedId ?? 'new'
+  const draftKey = chat.selectedId ?? `new:${chat.mode}`
   const draft = drafts[draftKey] ?? ''
   const setDraft = (text: string) => setDrafts(previous => ({ ...previous, [draftKey]: text }))
   const [replyTarget, setReplyTarget] = useState<{ callId: string; conversationId: string; question: CallConfirmation } | null>(null)
@@ -29,8 +29,10 @@ export default function App() {
     }
     if (chat.send(text)) setDraft('')
   }
-  return <ChatView messages={chat.messages} onRetry={chat.retry}
-    conversationId={chat.selectedId} conversations={chat.items} onNewConversation={() => { setDrafts(previous => ({ ...previous, new: '' })); chat.newConversation() }} onSelectConversation={chat.open}
+  return <ChatView simulation={chat.mode === 'simulation'} onNewDebugConversation={() => {
+    setDrafts(previous => ({ ...previous, 'new:simulation': '' })); chat.newConversation('simulation')
+  }} messages={chat.messages} onRetry={chat.retry}
+    conversationId={chat.selectedId} conversations={chat.items} onNewConversation={() => { setDrafts(previous => ({ ...previous, 'new:real': '' })); chat.newConversation() }} onSelectConversation={chat.open}
     onConversationsChanged={id => { if (id === chat.selectedId) chat.newConversation(); else void chat.refreshList() }}
     listError={chat.listError} hasMoreConversations={Boolean(chat.listCursor)} onMoreConversations={chat.moreList} onReloadList={chat.refreshList}
     loading={chat.loading} loadError={chat.loadError} onReload={chat.refresh}

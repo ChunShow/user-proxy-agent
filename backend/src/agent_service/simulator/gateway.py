@@ -13,6 +13,7 @@ from agent_service.calls.audio_gateway import ModelAudioGateway
 from agent_service.calls.media import MediaProtocol, NativeMedia
 from agent_service.calls.realtime import NoRedirectConnect
 from agent_service.calls.types import CallSnapshot, DialRejected, DialUncertain, ProviderFailure
+from agent_service.settings import ROOT
 
 SIM_ID = re.compile(r"SIM[a-f0-9]{32}")
 
@@ -39,9 +40,15 @@ class SimulatorConfig:
 
     @classmethod
     def load(cls):
+        token = os.environ.get("SIMULATOR_TOKEN", "")
+        if not token:
+            try:
+                token = (ROOT / "var/simulator/api-token").read_text().strip()
+            except OSError:
+                raise ProviderFailure("simulator_unavailable") from None
         return cls(
             os.environ.get("SIMULATOR_URL", "http://127.0.0.1:9020"),
-            os.environ.get("SIMULATOR_TOKEN", ""),
+            token,
         )
 
 

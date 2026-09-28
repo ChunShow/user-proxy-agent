@@ -77,7 +77,12 @@ def build_call_tools(context: CallContext):
                 context.source_user_message_id,
                 CallSpec(**arguments),
             )
-            return {"call_id": call["id"], "status": call["status"], "purpose": call["purpose"]}
+            return {
+                "call_id": call["id"], "status": call["status"], "purpose": call["purpose"],
+                "mode": call.get("mode", "real"),
+                "approval_button": "승인하고 가상 통화 시작"
+                if call.get("mode") == "simulation" else "승인하고 전화 걸기",
+            }
 
         result = await guarded(start)
         if "error" in result:

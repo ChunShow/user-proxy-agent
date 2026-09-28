@@ -64,6 +64,8 @@ def migrate(db):
         );
     """)
     columns = {r["name"] for r in db.execute("PRAGMA table_info(phone_calls)")}
+    if "mode" not in columns:
+        db.execute("ALTER TABLE phone_calls ADD COLUMN mode TEXT NOT NULL DEFAULT 'real'")
     for name in ("approval_expires_at", "approved_at"):
         if name not in columns:
             db.execute(f"ALTER TABLE phone_calls ADD COLUMN {name} REAL")
@@ -81,6 +83,7 @@ def view(row):
         for k in (
             "id",
             "conversation_id",
+            "mode",
             "source_user_message_id",
             "status",
             "created_at",
@@ -182,7 +185,7 @@ class CallStore:
         with self.db.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             self._expire_pending(db)
-            self.db._conversation(db, owner, cid)
+            conversation = self.db._conversation(db, owner, cid)
             anchor = db.execute(
                 "SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND role='user'",
                 (uid, cid),
@@ -203,10 +206,10 @@ class CallStore:
             db.execute(
                 """INSERT INTO phone_calls
                 (id,owner_id,conversation_id,source_user_message_id,spec,fingerprint,
-                 created_at,updated_at,status,approval_expires_at)
-                 VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                 created_at,updated_at,status,approval_expires_at,mode)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (call_id, owner, cid, uid, payload, fingerprint, timestamp, timestamp,
-                 "awaiting_approval", time.time() + APPROVAL_SECONDS),
+                 "awaiting_approval", time.time() + APPROVAL_SECONDS, conversation["mode"]),
             )
             row = self._get(db, call_id)
             self._event(db, row)

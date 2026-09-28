@@ -5,18 +5,18 @@ import type { ChatRequest } from './stream'
 import type { ChatMessage } from './types'
 import { mergeSavedMessages, latestChatMessage } from './resultMessages'
 import { createConversation, getConversation, listConversations, prepareSession, generateTitle } from './conversations'
-import type { Conversation } from './conversations'
+import type { Conversation, ConversationMode } from './conversations'
 
-type View = { id: string | null }
+type View = { id: string | null; mode?: ConversationMode }
 type Active = { controller: AbortController; responseId: string; userId: string; request: ChatRequest; accepted: boolean }
 const selectionKey = 'proxy.selectedConversation'
 function savedSelection() { try { return localStorage.getItem(selectionKey) } catch { return null } }
 function readView(initial = false): View {
   const query = new URLSearchParams(location.search)
-  return { id: query.get('conversation') || (initial ? savedSelection() : null) }
+  return { id: query.get('conversation') || (initial ? savedSelection() : null), mode: query.get('debug') === '1' ? 'simulation' : 'real' }
 }
 function remember(id: string | null) { try { if (id) localStorage.setItem(selectionKey, id); else localStorage.removeItem(selectionKey) } catch { /* Storage may be unavailable. */ } }
-function urlFor(view: View) { return view.id ? `/?conversation=${encodeURIComponent(view.id)}` : '/' }
+function urlFor(view: View) { return view.id ? `/?conversation=${encodeURIComponent(view.id)}` : view.mode === 'simulation' ? '/?debug=1' : '/' }
 const failure = (error: unknown) => error instanceof ApiError ? error : new ApiError('load_failed')
 
 export default function useChat() {
@@ -63,6 +63,8 @@ export default function useChat() {
     try {
       const data = await getConversation(id)
       if (!alive.current || generation.current !== version) return
+      const next = { ...viewRef.current, mode: data.conversation.mode ?? 'real' as ConversationMode }
+      viewRef.current = next; setView(next)
       replace(data.messages); setMessageCursor(data.next_cursor)
     } catch (error) { if (alive.current && generation.current === version) setLoadError(failure(error).message) }
     finally { if (alive.current && generation.current === version) setLoading(false) }
@@ -110,7 +112,7 @@ export default function useChat() {
     active.current = current; pendingRetry.current = null; setBusy(true)
     let completed = false
     try {
-      await createConversation(request.conversation_id, current.controller.signal)
+      await createConversation(request.conversation_id, current.controller.signal, viewRef.current.mode ?? 'real')
       if (active.current !== current) return
       void refreshList()
       await streamChat(request, current.controller.signal, event => {
@@ -145,7 +147,7 @@ export default function useChat() {
     let id = viewRef.current.id
     if (!id) {
       id = crypto.randomUUID()
-      const next = { id }
+      const next = { ...viewRef.current, id }
       viewRef.current = next; setView(next); remember(id); history.replaceState(null, '', urlFor(next))
     }
     const userId = crypto.randomUUID(), responseId = crypto.randomUUID()
@@ -194,7 +196,7 @@ export default function useChat() {
   }, [ready, loading, loadError, replace, refreshList])
   const remoteBusy = !busy && messages.some(m => m.status === 'streaming')
   return { messages, busy, send, stop, retry, items, loading, loadError, listError, pageError, ready, syncCallResults,
-    selectedId: view.id, remoteBusy, messageCursor, listCursor, loadMore,
+    selectedId: view.id, mode: view.mode ?? 'real', remoteBusy, messageCursor, listCursor, loadMore,
     refresh: async () => {
       if (!ready) {
         setLoading(true); setLoadError('')
@@ -205,6 +207,6 @@ export default function useChat() {
     }, refreshList: () => refreshList(),
     moreList: () => refreshList(listCursor ?? undefined),
     open: (id: string) => select({ id }),
-    newConversation: () => select({ id: null }),
+    newConversation: (mode: ConversationMode = 'real') => select({ id: null, mode }),
   }
 }

@@ -56,7 +56,7 @@ export default function PhoneCallCard({ call, onApprove, onStop, onRefresh, pend
   const problem = call.error_code ? callProblems[call.error_code] : undefined
   return <section className="phone-card" aria-label={`${call.subject} 통화`}>
     <div className="phone-heading"><h2><Icon name="phone" />{call.subject}</h2><span className={`phone-state phone-${call.status}`} role="status">{label}</span></div>
-    <p className="phone-destination">{call.destination}</p>
+    <p className="phone-destination">{call.destination}{call.mode === 'simulation' && <span className="call-mode">가상 ARS · 실제 발신 없음</span>}</p>
     <p className="phone-purpose">{call.purpose}</p>
     {call.status === 'connected' && !ending && <CallListening key={`listen-${call.id}`} callId={call.id} />}
     {awaiting && <div className="phone-approval-details">
@@ -97,7 +97,7 @@ export default function PhoneCallCard({ call, onApprove, onStop, onRefresh, pend
     {call.error_code === 'call_status_unavailable' && <p className="phone-problem">현재 회선 상태를 확인하지 못했습니다.</p>}
     {error && <p className="phone-problem" role="status">{error}</p>}
     {awaiting && <div className="phone-actions">
-      <button className="phone-approve" type="button" disabled={pending || expired || !!error} onClick={() => onApprove?.(call.id, call.version)}>{pending ? '처리 중…' : '승인하고 전화 걸기'}</button>
+      <button className="phone-approve" type="button" disabled={pending || expired || !!error} onClick={() => onApprove?.(call.id, call.version)}>{pending ? '처리 중…' : call.mode === 'simulation' ? '승인하고 가상 통화 시작' : '승인하고 전화 걸기'}</button>
       <button type="button" disabled={pending} onClick={() => onStop(call.id)}>취소</button>
       {error && <button type="button" disabled={pending} onClick={() => onRefresh(call.id)}>다시 확인</button>}
     </div>}

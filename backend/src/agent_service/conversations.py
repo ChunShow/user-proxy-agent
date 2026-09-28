@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -13,6 +14,7 @@ router = APIRouter()
 class NewConversation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     conversation_id: UUID
+    mode: Literal["real", "simulation"] = "real"
 
 
 @router.get("/api/conversations")
@@ -31,7 +33,7 @@ async def create(request: Request, body: NewConversation):
     check_mutation(request)
     owner = await require_owner(request)
     data = await run_in_threadpool(
-        request.app.state.store.create_conversation, owner, str(body.conversation_id)
+        request.app.state.store.create_conversation, owner, str(body.conversation_id), body.mode
     )
     return JSONResponse(data, status_code=201, headers={"Cache-Control": "no-store"})
 

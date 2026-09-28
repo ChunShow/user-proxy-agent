@@ -86,6 +86,8 @@ class ConversationStore:
             """)
 
             columns = {r["name"] for r in db.execute("PRAGMA table_info(conversations)")}
+            if "mode" not in columns:
+                db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'real'")
             if "deleted_at" not in columns:
                 db.execute("ALTER TABLE conversations ADD COLUMN deleted_at TEXT")
             if "title_state" not in columns:
@@ -132,7 +134,7 @@ class ConversationStore:
 
     def _conversation(self, db, owner, cid):
         row = db.execute(
-            "SELECT id,title,updated_at FROM conversations "
+            "SELECT id,title,updated_at,mode FROM conversations "
             "WHERE id=? AND owner_id=? AND deleted_at IS NULL",
             (cid, owner),
         ).fetchone()
@@ -140,16 +142,21 @@ class ConversationStore:
             raise StoreError("not_found", 404)
         return dict(row)
 
-    def create_conversation(self, owner, cid):
+    def create_conversation(self, owner, cid, mode="real"):
+        if mode not in {"real", "simulation"}:
+            raise StoreError("invalid_request", 422)
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute(
                 "INSERT OR IGNORE INTO conversations"
-                "(id,owner_id,title,created_at,updated_at,title_state) "
-                "VALUES(?,?,?,?,?,'pending')",
-                (cid, owner, "새 대화", now(), now()),
+                "(id,owner_id,title,created_at,updated_at,title_state,mode) "
+                "VALUES(?,?,?,?,?,'pending',?)",
+                (cid, owner, "새 대화", now(), now(), mode),
             )
-            return self._conversation(db, owner, cid)
+            result = self._conversation(db, owner, cid)
+            if result["mode"] != mode:
+                raise StoreError("conversation_mode_conflict")
+            return result
 
     def list_conversations(self, owner, cursor=None, deleted=False):
         position = None
@@ -166,7 +173,8 @@ class ConversationStore:
                 raise StoreError("invalid_request", 422) from None
         with self.connection() as db:
             sql = (
-                "SELECT id,title,updated_at FROM conversations WHERE owner_id=? AND deleted_at IS "
+                "SELECT id,title,updated_at,mode FROM conversations "
+                "WHERE owner_id=? AND deleted_at IS "
             )
             sql += "NOT NULL" if deleted else "NULL"
             args = [owner]

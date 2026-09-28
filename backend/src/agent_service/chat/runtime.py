@@ -56,10 +56,15 @@ async def stream_agent(agent, messages: list[dict], *, callbacks=None) -> AsyncI
 async def stream_reply(
     messages: list[dict], settings: Settings, call_context: CallContext | None = None
 ) -> AsyncIterator[str]:
+    simulation = False
+    if call_context and hasattr(call_context.manager, "conversation_mode"):
+        simulation = await call_context.manager.conversation_mode(
+            call_context.owner, call_context.conversation_id
+        ) == "simulation"
     call_tools = build_call_tools(call_context) if call_context else []
-    if call_context and getattr(call_context.manager, "integrations", None):
+    if not simulation and call_context and getattr(call_context.manager, "integrations", None):
         call_tools += build_integration_tools(call_context.manager.integrations, call_context.owner)
-    if call_context and getattr(call_context.manager, "actions", None):
+    if not simulation and call_context and getattr(call_context.manager, "actions", None):
         actions = call_context.manager.actions
         call_tools += build_action_tools(actions, call_context)
         records = await action_history(actions, call_context)
@@ -82,6 +87,14 @@ async def stream_reply(
         prompt = (
             SYSTEM_PROMPT + " 현재 한국 시간: " + datetime.now(ZoneInfo("Asia/Seoul")).isoformat()
         )
+        if simulation:
+            prompt += (
+                " 이 대화는 가상 ARS 디버깅입니다. 실제 전화나 Google 작업은 하지 않습니다. "
+                "시험 번호는 01000000001입니다. 이 번호에 대한 사용자 발신 요청을 받으면 "
+                "통화 도구로 승인 카드를 만드세요. ARS에서는 먼저 안내를 듣습니다. "
+                "병원 정보는 가상 시험 데이터라고 명시하세요. "
+                "이 모드의 승인 버튼 이름은 승인하고 가상 통화 시작입니다."
+            )
         identity = (
             (call_context.conversation_id, call_context.source_user_message_id, None)
             if call_context
