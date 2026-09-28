@@ -27,7 +27,22 @@ Caddy에서 `/_access/login`, `/_access/logout`은 인증 서비스로 전달하
 ```caddyfile
 forward_auth 127.0.0.1:5189 {
     uri /_access/verify
+    header_up -Connection
+    header_up -Upgrade
 }
+```
+
+`Connection`과 `Upgrade`는 **인증 하위 요청에서만** 제거한다. 인증 서버는 HTTP GET으로
+쿠키를 확인한다. 이 헤더를 그대로 넘기면 인증 요청까지 WebSocket 업그레이드가 되어
+403으로 거절되며, 실제·가상 통화 모두 공유 페이지에서 소리를 들을 수 없다.
+제품 API로 전달하는 원래 요청에는 WebSocket 업그레이드를 유지한다.
+
+전체 설정 템플릿은 [`config/Caddyfile`](../config/Caddyfile)이다. 프로젝트 루트에서
+`UPA_PUBLIC_ORIGIN`을 공유 HTTPS origin으로, `UPA_WEB_ROOT`를 빌드한 `web/dist`의
+절대 경로로 지정한 뒤 실행한다. 인증 서비스의 비공개 JSON `origin`과 일치해야 한다.
+
+```sh
+UPA_PUBLIC_ORIGIN=https://your-tunnel.trycloudflare.com UPA_WEB_ROOT="$PWD/web/dist" caddy run --config config/Caddyfile --adapter caddyfile
 ```
 
 다른 Origin은 앞단에서 거부한다. 제품 API의 기존 Host/Origin 프록시 설정은 유지한다.
@@ -46,4 +61,6 @@ forward_auth 127.0.0.1:5189 {
 - 공유 비밀번호는 제품 계정이 아니다. 브라우저별 대화·Google 연결은 합쳐지지 않는다.
 - 자격증명·개인 설정·로그는 저장소에 올리지 않는다.
 
-검증: `cd backend && uv run pytest tests/test_remote_access.py tests/test_session.py -q`.
+검증: `cd backend && uv run pytest tests/test_shared_listening.py tests/test_remote_access.py tests/test_session.py tests/calls/test_listening.py -q`.
+공유 연결 회귀 검사는 설치된 Caddy로 인증 전 거부·다른 Origin 거부·인증 후 양쪽 음성
+트랙 전달을 확인한다. Caddy가 없으면 해당 검사만 건너뛴다.
