@@ -59,12 +59,13 @@ def test_migration_owner_dedup_and_single_global_slot(tmp_path):
     db.initialize()
     with db.connection() as sql:
         assert sql.execute("SELECT version FROM schema_version").fetchall()[0][0] == 4
-    assert calls.get(owner, a["id"])["status"] == "preparing"
+    assert calls.get(owner, a["id"])["status"] == "awaiting_approval"
 
 
 def test_dial_claim_is_atomic_and_unknown_retains_slot(tmp_path):
     db, calls, owner, cid, uid = setup_store(tmp_path)
     a = calls.register(owner, cid, uid, spec())
+    calls.approve(owner, a["id"], a["version"])
     with ThreadPoolExecutor(max_workers=2) as pool:
         claims = list(pool.map(lambda _: calls.claim_dial(a["id"]), range(2)))
     assert sum(claims) == 1

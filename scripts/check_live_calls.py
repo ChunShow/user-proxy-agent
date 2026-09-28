@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit operator check. --preflight never dials; --run submits through chat API."""
+"""Operator check: --preflight never dials; --run requests approval but never approves."""
 
 import argparse
 import asyncio
@@ -88,6 +88,7 @@ async def run(to, request_id):
             "conversation_id": cid,
             "request_id": rid,
             "submitted_through_chat": True,
+            "requires_web_approval": True,
         }
 
 
@@ -100,7 +101,7 @@ def main():
     parser.add_argument("--request-id")
     args = parser.parse_args()
     if args.run and (not args.to or not args.request_id):
-        parser.error("--run requires --to and --request-id; it can place a billable call")
+        parser.error("--run requires --to and --request-id; it creates a pending approval")
     if args.preflight and (args.to or args.request_id):
         parser.error("--preflight does not accept dialing arguments")
     try:

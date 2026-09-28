@@ -16,6 +16,7 @@ async def test_http_chat_disconnect_and_text_retry_keep_one_managed_call(monkeyp
     from test_call_settings import values
     from test_call_store import spec
     from test_manager import FakeGateway
+    from test_native_audio import until
 
     from agent_service.calls.settings import CallSettings
     from agent_service.calls.tools import build_call_tools
@@ -86,7 +87,12 @@ async def test_http_chat_disconnect_and_text_retry_keep_one_managed_call(monkeyp
                         break
                     await asyncio.sleep(0.01)
             active = (await client.get(base + "/api/calls/active")).json()["items"]
-            assert len(active) == 1 and gateway.dials == 1 and not gateway.closed
+            assert len(active) == 1 and gateway.dials == 0
+            response = await client.post(base + f"/api/calls/{active[0]['id']}/approve",
+                                         json={"expected_version": active[0]["version"]})
+            assert response.status_code == 200
+            await until(lambda: gateway.dials == 1)
+            assert not gateway.closed
             async with client.stream(
                 "POST",
                 base + "/api/chat",

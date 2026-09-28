@@ -20,7 +20,7 @@ def values():
 
 def test_separate_settings_private_and_constrained(tmp_path):
     s = CallSettings.load(tmp_path / "missing", environ=values())
-    assert s.max_seconds == 180 and s.allowed_numbers == ("01000000001",)
+    assert s.max_seconds == 180
     assert "secret" not in repr(s) and "secret" not in repr(s.carrier)
     assert normalize_number("+82 10-0000-0001") == "01000000001"
     assert normalize_number("1588-5700") == "15885700"
@@ -33,7 +33,6 @@ def test_separate_settings_private_and_constrained(tmp_path):
         ("CALL_MAX_SECONDS", "181"),
         ("CALL_MAX_SECONDS", "0"),
         ("CALL_REALTIME_BASE_URL", "https://evil.test"),
-        ("CALL_ALLOWED_NUMBERS", ""),
         ("CLAWOPS_API_KEY", ""),
     ],
 )
@@ -48,3 +47,11 @@ def test_invalid_call_configuration_cannot_enable_dial(tmp_path, key, value):
 def test_normalization_does_not_strip_arbitrary_text(number):
     with pytest.raises(ValueError):
         normalize_number(number)
+
+
+def test_legacy_allowlist_is_not_required_or_used(tmp_path):
+    env = values()
+    env.pop("CALL_ALLOWED_NUMBERS")
+    assert CallSettings.load(tmp_path / "missing", environ=env).max_seconds == 180
+    env["CALL_ALLOWED_NUMBERS"] = "invalid legacy value"
+    assert CallSettings.load(tmp_path / "missing", environ=env).max_seconds == 180

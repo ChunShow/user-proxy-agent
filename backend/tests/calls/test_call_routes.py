@@ -104,3 +104,41 @@ def test_activity_cursor_validation_and_empty_terminal_page(tmp_path):
             "has_more": False,
             "terminal": True,
         }
+
+
+def test_approval_api_is_owner_scoped_versioned_and_cannot_change_plan(tmp_path):
+    from test_call_settings import values
+    from test_manager import FakeGateway
+
+    from agent_service.calls.settings import CallSettings
+
+    app = create_app(database_path=tmp_path / "db.sqlite3")
+    gateway = FakeGateway()
+    gateway.status = "completed"
+    settings = CallSettings.load(tmp_path / "missing", environ=values())
+    app.state.calls.settings_loader = lambda: settings
+    app.state.calls.gateway_factory = gateway.open
+    with TestClient(app) as client:
+        _, call = seed(app, client)
+        url = f"/api/calls/{call['id']}/approve"
+        body = {"expected_version": call["version"]}
+        assert call["status"] == "awaiting_approval" and gateway.dials == 0
+        assert client.post(url, json=body,
+                           headers={"Origin": "https://evil.test"}).status_code == 403
+        assert client.post(url, json=body | {"destination": "01000000002"}).status_code == 422
+        assert client.post(url, json={"expected_version": True}).status_code == 422
+        assert client.post(url, json={"expected_version": 999}).status_code == 409
+        original = client.cookies.get("proxy_session")
+        client.cookies.clear()
+        assert client.post(url, json=body).status_code == 401
+        client.post("/api/session", json={})
+        assert client.post(url, json=body).status_code == 404
+        assert gateway.dials == 0
+        client.cookies.clear()
+        client.cookies.set("proxy_session", original)
+        assert client.post(url, json=body).status_code == 200
+        client.portal.call(app.state.calls.wait_idle)
+        assert gateway.dials == 1
+        assert client.post(url, json=body).status_code == 200
+        client.portal.call(app.state.calls.wait_idle)
+        assert gateway.dials == 1

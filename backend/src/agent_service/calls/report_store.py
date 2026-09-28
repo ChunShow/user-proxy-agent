@@ -17,6 +17,8 @@ def migrate(db):
 
 
 def enqueue(db, call):
+    if call.get("error_code") in {"call_approval_canceled", "call_approval_expired"}:
+        return
     if call["status"] in ("ended", "failed", "canceled"):
         db.execute("INSERT OR IGNORE INTO call_reports(call_id) VALUES(?)", (call["id"],))
 

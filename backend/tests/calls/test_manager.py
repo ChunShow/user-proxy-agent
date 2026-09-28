@@ -102,10 +102,18 @@ def manager(tmp_path, **options):
     return m, gateway, db, store, owner, cid, uid
 
 
+async def approved_start(m, owner, cid, uid, specification):
+    """Explicit simulated user approval for tests of the post-approval lifecycle."""
+    call = await m.start(owner, cid, uid, specification)
+    if call["status"] == "awaiting_approval":
+        await m.approve(owner, call["id"], call["version"])
+    return call
+
+
 async def test_dedup_independent_work_and_direct_stop(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
-    a = await m.start(o, c, u, spec())
-    duplicate = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
+    duplicate = await approved_start(m, o, c, u, spec())
     assert duplicate["id"] == a["id"]
     await until(lambda: g.dials == 1)
     await until(lambda: s.get(o, a["id"])["status"] == "connected")
@@ -120,9 +128,10 @@ async def test_dedup_independent_work_and_direct_stop(tmp_path):
     await m.shutdown()
 
 
-async def test_cancel_registration_waiter_does_not_orphan_job(tmp_path):
+async def test_cancel_approval_waiter_does_not_orphan_approved_job(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
-    task = asyncio.create_task(m.start(o, c, u, spec()))
+    a = await m.start(o, c, u, spec())
+    task = asyncio.create_task(m.approve(o, a["id"], a["version"]))
     await asyncio.sleep(0.001)
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
@@ -134,7 +143,7 @@ async def test_cancel_registration_waiter_does_not_orphan_job(tmp_path):
 async def test_stop_during_dial_waits_for_id_then_hangs_up(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     g.dial_gate.clear()
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await until(lambda: g.dials == 1)
     await m.stop(o, a["id"])
     assert g.hangups == 0
@@ -146,7 +155,7 @@ async def test_stop_during_dial_waits_for_id_then_hangs_up(tmp_path):
 async def test_stop_before_dial_skips_provider_creation(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     g.prep_gate.clear()
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await m.stop(o, a["id"])
     g.prep_gate.set()
     await m.wait_idle()
@@ -159,10 +168,10 @@ async def test_stop_before_dial_skips_provider_creation(tmp_path):
 async def test_no_retry_on_uncertainty_or_rejection(tmp_path, error, status):
     m, g, db, s, o, c, u = manager(tmp_path)
     g.dial_error = error
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await m.wait_idle()
     assert s.get(o, a["id"])["status"] == status
-    assert (await m.start(o, c, u, spec()))["id"] == a["id"]
+    assert (await approved_start(m, o, c, u, spec()))["id"] == a["id"]
     await m.wait_idle()
     assert g.dials == 1
     if status == "unknown":
@@ -174,7 +183,7 @@ async def test_no_retry_on_uncertainty_or_rejection(tmp_path, error, status):
 async def test_hangup_failure_retains_slot_and_can_be_rechecked(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     g.hangup_error = True
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await until(lambda: g.dials == 1)
     await m.stop(o, a["id"])
     await m.wait_idle()
@@ -187,12 +196,12 @@ async def test_hangup_failure_retains_slot_and_can_be_rechecked(tmp_path):
 
 async def test_remote_end_and_time_limit_are_incomplete_not_success(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path, max_seconds_override=0.03)
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await m.wait_idle()
     assert s.get(o, a["id"])["status"] == "ended"
     assert s.get(o, a["id"])["outcome"] == "incomplete"
     assert g.hangups == 1
-    b = await m.start(o, c, add_user(db, o, c)["user_message_id"], spec())
+    b = await approved_start(m, o, c, add_user(db, o, c)["user_message_id"], spec())
     # Carrier says it has already ended: no media and no second hangup needed.
     await m.wait_idle()
     assert s.get(o, b["id"])["status"] == "ended" and g.hangups == 1
@@ -210,7 +219,7 @@ async def test_success_requires_playback_and_provider_confirmation(tmp_path, pla
             "summary": "테스트 답변 재확인",
         }
     }
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     g.audio_gate.set()
     await m.wait_idle()
     assert s.get(o, a["id"])["outcome"] == expected
@@ -220,12 +229,14 @@ async def test_success_requires_playback_and_provider_confirmation(tmp_path, pla
 async def test_restart_never_dials_and_unknown_is_not_cleared(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     a = s.register(o, c, u, spec())
+    s.approve(o, a["id"], a["version"])
     s.claim_dial(a["id"])
     s.update(a["id"], provider_call_id="CAtest")
     await m.recover()
     await m.wait_idle()
     assert g.dials == 0 and g.hangups == 1
     b = s.register(o, c, add_user(db, o, c)["user_message_id"], spec())
+    s.approve(o, b["id"], b["version"])
     s.claim_dial(b["id"])
     await m.recover()
     await m.wait_idle()
@@ -236,11 +247,11 @@ async def test_restart_never_dials_and_unknown_is_not_cleared(tmp_path):
 async def test_guessed_number_and_no_explicit_request_cannot_dial(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     with pytest.raises(StoreError) as e:
-        await m.start(o, c, u, spec(destination="01000000002"))
-    assert e.value.code == "call_number_not_allowed"
+        await approved_start(m, o, c, u, spec(destination="01000000002"))
+    assert e.value.code == "call_request_required"
     uid = add_user(db, o, c, "통화 요금은 얼마야?")["user_message_id"]
     with pytest.raises(StoreError) as e:
-        await m.start(o, c, uid, spec())
+        await approved_start(m, o, c, uid, spec())
     assert e.value.code == "call_request_required"
     assert g.dials == 0
 
@@ -248,7 +259,7 @@ async def test_guessed_number_and_no_explicit_request_cannot_dial(tmp_path):
 async def test_lookup_failure_does_not_prevent_attempt_to_hangup(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     g.lookup_error = True
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await until(lambda: g.dials == 1)
     await m.stop(o, a["id"])
     await m.wait_idle()
@@ -260,7 +271,7 @@ async def test_goal_evidence_survives_unconfirmed_hangup_and_refresh(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     g.hangup_error = True
     g.report = {"end_call": {"reason": "goal_achieved", "status": "played", "summary": "확인됨"}}
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     g.audio_gate.set()
     await m.wait_idle()
     assert s.get(o, a["id"])["status"] == "ending"
@@ -282,7 +293,7 @@ async def test_database_failure_after_dial_still_attempts_carrier_cleanup(tmp_pa
         return original(call_id, **changes)
 
     monkeypatch.setattr(s, "update", broken)
-    await m.start(o, c, u, spec())
+    await approved_start(m, o, c, u, spec())
     await m.wait_idle()
     assert g.dials == 1 and g.hangups >= 1
 
@@ -291,7 +302,7 @@ async def test_disconnect_during_stop_persistence_still_stops_worker(tmp_path, m
     import threading
 
     m, g, db, s, o, c, u = manager(tmp_path)
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await until(lambda: s.get(o, a["id"])["status"] == "connected")
     entered, release = threading.Event(), threading.Event()
     original = s.request_stop
@@ -325,7 +336,7 @@ async def test_call_request_accepts_constraints_on_the_conversation(tmp_path, co
     m, g, db, s, o, c, u = manager(tmp_path)
     uid = add_user(db, o, c, "01000000001로 전화 걸어줘. " + condition)["user_message_id"]
     try:
-        call = await m.start(o, c, uid, spec())
+        call = await approved_start(m, o, c, uid, spec())
         await until(lambda: s.get(o, call["id"])["status"] == "connected")
         assert g.dials == 1
     finally:
@@ -348,7 +359,7 @@ async def test_call_request_still_rejects_direct_prohibitions(tmp_path, user_req
     m, g, db, s, o, c, u = manager(tmp_path)
     uid = add_user(db, o, c, user_request)["user_message_id"]
     with pytest.raises(StoreError, match="call_request_required"):
-        await m.start(o, c, uid, spec())
+        await approved_start(m, o, c, uid, spec())
     assert g.dials == 0
 
 
@@ -367,7 +378,7 @@ async def test_carrier_end_reason_survives_media_wait_failure(tmp_path, status, 
         g.media = disconnected_media
     else:
         g.status = status
-    call = await m.start(o, c, u, spec())
+    call = await approved_start(m, o, c, u, spec())
     await m.wait_idle()
     result = s.get(o, call["id"])
     assert result["status"] == "ended"
@@ -386,7 +397,7 @@ async def test_audio_failure_on_connected_line_is_not_mislabeled_as_no_answer(tm
         yield  # pragma: no cover
 
     g.media = broken_media
-    call = await m.start(o, c, u, spec())
+    call = await approved_start(m, o, c, u, spec())
     await m.wait_idle()
     result = s.get(o, call["id"])
     assert result["status"] == "ended"

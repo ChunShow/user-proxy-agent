@@ -1,6 +1,6 @@
 import { request } from '../api/request'
 
-export type PhoneStatus = 'preparing' | 'dialing' | 'connected' | 'ending' | 'ended' | 'failed' | 'canceled' | 'unknown'
+export type PhoneStatus = 'awaiting_approval' | 'preparing' | 'dialing' | 'connected' | 'ending' | 'ended' | 'failed' | 'canceled' | 'unknown'
 export interface CallInstruction {
   id: string
   text: string
@@ -23,6 +23,9 @@ export interface PhoneCall {
   destination: string
   subject: string
   purpose: string
+  opening_message?: string
+  questions?: string[]
+  approval_expires_at?: number | null
   status: PhoneStatus
   outcome: 'pending' | 'model_reported_success' | 'incomplete' | 'canceled'
   end_report?: string
@@ -54,6 +57,7 @@ export const getCallActivity = (id: string, after: number, signal?: AbortSignal)
 export const isActiveCall = (call: PhoneCall) => !['ended', 'failed', 'canceled'].includes(call.status)
 export const activeCalls = (signal?: AbortSignal) => request<{ items: PhoneCall[] }>('/api/calls/active', undefined, signal)
 export const listCalls = (id: string, cursor?: string, signal?: AbortSignal) => request<Page>(`/api/conversations/${encodeURIComponent(id)}/calls${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, undefined, signal)
+export const approveCall = (id: string, expectedVersion: number) => request<PhoneCall>(`/api/calls/${encodeURIComponent(id)}/approve`, { expected_version: expectedVersion })
 export const stopCall = (id: string) => request<PhoneCall>(`/api/calls/${encodeURIComponent(id)}/stop`, {})
 export const refreshCall = (id: string) => request<PhoneCall>(`/api/calls/${encodeURIComponent(id)}/refresh`, {})
 export const answerCall = (id: string, question: CallConfirmation, answer: string, requestId: string) =>

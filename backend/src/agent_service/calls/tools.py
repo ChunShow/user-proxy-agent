@@ -60,9 +60,10 @@ def build_call_tools(context: CallContext):
 
     @tool(args_schema=CallSpec)
     async def start_phone_call(**arguments) -> dict:
-        """사용자가 명시적으로 요청한 번호에 목적/질문을 전달한다. 즉시 작업 ID를 반환한다.
+        """사용자가 요청한 번호·목적·질문으로 발신 승인 카드를 만든다. 아직 전화하지 않는다.
 
         목적·번호가 부족하면 먼저 사용자에게 묻는다. 사용자 메시지에 없는 번호를 추측하지 않는다.
+        사용자가 웹 카드의 승인 버튼을 눌러야 발신한다. 채팅 동의로 승인할 수 없다.
         접수는 연결/목표 달성의 증거가 아니다. 실패/unknown을 자동 재발신하지 않는다.
         """
 

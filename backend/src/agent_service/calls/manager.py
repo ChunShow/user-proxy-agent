@@ -23,7 +23,7 @@ from agent_service.calls.live_store import LiveStore
 from agent_service.calls.preflight import check_local_sender
 from agent_service.calls.realtime import AzureAudioSession
 from agent_service.calls.settings import CallSettings, normalize_number
-from agent_service.calls.store import TERMINAL
+from agent_service.calls.store import TERMINAL, CallSpec
 from agent_service.calls.types import TERMINAL as CARRIER_TERMINAL
 from agent_service.calls.types import DialRejected, DialUncertain, ProviderFailure
 from agent_service.storage import StoreError
@@ -185,14 +185,27 @@ class CallManager:
         return await asyncio.shield(task)
 
     async def _register(self, owner, cid, uid, spec):
-        settings = self.settings_loader()
-        if spec.destination not in settings.allowed_numbers:
-            raise StoreError("call_number_not_allowed", 422)
+        self.settings_loader()
         current, texts = await self.db(self.store.user_texts, owner, cid, uid)
         if not requested_number(current, texts, spec.destination):
             raise StoreError("call_request_required", 422)
-        call = await self.db(self.store.register, owner, cid, uid, spec)
-        if call["status"] == "preparing":
+        return await self.db(self.store.register, owner, cid, uid, spec)
+
+    async def approve(self, owner, call_id, expected_version):
+        if self.closing:
+            raise StoreError("calls_unavailable", 503)
+        return await self._owned(self._approve(owner, call_id, expected_version))
+
+    async def _approve(self, owner, call_id, expected_version):
+        await self.get(owner, call_id)
+        try:
+            settings = self.settings_loader()
+        except ProviderFailure:
+            raise StoreError("calls_not_configured", 503) from None
+        call, claimed = await self.db(self.store.approve, owner, call_id, expected_version)
+        if claimed:
+            row = await self.db(self.store.record, call_id)
+            spec = CallSpec.model_validate_json(row["spec"])
             self.signals.setdefault(call["id"], asyncio.Event())
             self._spawn(call["id"], self._run(call["id"], settings, spec))
         return call
@@ -499,7 +512,7 @@ class CallManager:
 
     async def refresh(self, owner, call_id):
         call = await self.get(owner, call_id)
-        if call["status"] in TERMINAL:
+        if call["status"] in TERMINAL or call["status"] == "awaiting_approval":
             return call
         if call_id not in self.tasks:
             self._spawn(call_id, self._recover_one(call_id), recovery=True)
@@ -520,7 +533,9 @@ class CallManager:
                 call_id,
                 status="unknown" if uncertain else "canceled",
                 outcome="pending" if uncertain else "canceled",
-                error_code="call_delivery_unknown" if uncertain else None,
+                error_code="call_delivery_unknown" if uncertain else (
+                    "call_approval_canceled" if row["status"] == "awaiting_approval" else None
+                ),
             )
             return
         try:

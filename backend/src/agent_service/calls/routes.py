@@ -16,6 +16,11 @@ class EmptyBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ApprovalBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1, strict=True)
+
+
 class AnswerBody(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     answer: str = Field(min_length=1, max_length=2000)
@@ -84,6 +89,15 @@ async def get_call(call_id: UUID, request: Request, owner=Depends(require_owner)
 @router.post("/api/calls/{call_id}/stop", dependencies=[Depends(check_mutation)])
 async def stop_call(call_id: UUID, body: EmptyBody, request: Request, owner=Depends(require_owner)):
     return response(await request.app.state.calls.stop(owner, str(call_id)))
+
+
+@router.post("/api/calls/{call_id}/approve", dependencies=[Depends(check_mutation)])
+async def approve_call(
+    call_id: UUID, body: ApprovalBody, request: Request, owner=Depends(require_owner)
+):
+    return response(await request.app.state.calls.approve(
+        owner, str(call_id), body.expected_version
+    ))
 
 
 @router.post("/api/calls/{call_id}/refresh", dependencies=[Depends(check_mutation)])

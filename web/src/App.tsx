@@ -36,7 +36,7 @@ export default function App() {
     loading={chat.loading} loadError={chat.loadError} onReload={chat.refresh}
     hasMoreMessages={Boolean(chat.messageCursor)} onMoreMessages={chat.loadMore} pageError={chat.pageError}
     remoteBusy={chat.remoteBusy}
-    afterMessage={id => phones.calls.filter(c => c.source_user_message_id === id).map(c => <li className="phone-message" key={c.id}><PhoneCallCard call={c} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]}
+    afterMessage={id => phones.calls.filter(c => c.source_user_message_id === id).map(c => <li className="phone-message" key={c.id}><PhoneCallCard call={c} onApprove={phones.approve} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]}
       onAnswer={(id, q, text) => { void phones.answer(id, q, text) }} answerPending={phones.pending}
       onReply={(id, question) => { setReplyTarget({ callId: id, conversationId: c.conversation_id, question }); input.current?.focus() }} /></li>)}
     activeCall={phones.otherActive.map(c => <ActivePhoneCall key={c.id} call={c} onOpen={() => chat.open(c.conversation_id)} onStop={phones.stop} onRefresh={phones.refresh} pending={phones.pending.includes(c.id)} error={phones.actionErrors[c.id]} />)}

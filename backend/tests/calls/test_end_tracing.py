@@ -1,6 +1,6 @@
 import pytest
 from test_call_store import spec
-from test_manager import manager
+from test_manager import approved_start, manager
 from test_native_audio import until
 
 
@@ -14,7 +14,7 @@ async def test_carrier_end_trace_distinguishes_hangup_from_prior_close(tmp_path,
         "mode": "gpt_live",
         "end_call": {"reason": "goal_achieved", "status": "audio_drained"},
     }
-    call = await m.start(o, c, u, spec())
+    call = await approved_start(m, o, c, u, spec())
     await until(lambda: g.dials == 1)
     if already_ended:
         g.status = "completed"
@@ -47,7 +47,7 @@ async def test_carrier_hangup_failure_is_recorded_without_false_confirmation(tmp
 
     m, g, db, s, o, c, u = manager(tmp_path)
     g.hangup_error = True
-    call = await m.start(o, c, u, spec())
+    call = await approved_start(m, o, c, u, spec())
     g.audio_gate.set()
     await until(lambda: not m.tasks)
     kinds = [e["kind"] for e in LiveStore(s).activity(o, call["id"])["events"]]
@@ -168,7 +168,7 @@ async def test_diagnostics_failure_does_not_block_direct_hangup(tmp_path, monkey
         raise RuntimeError("diagnostics unavailable")
 
     monkeypatch.setattr(LiveStore, "event", broken)
-    call = await m.start(o, c, u, spec())
+    call = await approved_start(m, o, c, u, spec())
     await until(lambda: g.dials == 1)
     await m.stop(o, call["id"])
     await until(lambda: not m.tasks)

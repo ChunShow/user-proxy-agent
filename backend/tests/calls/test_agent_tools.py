@@ -5,7 +5,7 @@ import httpx
 import pytest
 from langchain_openai import ChatOpenAI
 from test_call_store import add_user, spec
-from test_manager import manager
+from test_manager import approved_start, manager
 from test_native_audio import until
 
 from agent_service.calls.tools import CallContext, build_call_tools, call_history
@@ -26,7 +26,10 @@ async def test_tools_inject_ownership_and_return_without_waiting_for_phone(tmp_p
     schema = tools[0].args_schema.model_json_schema()["properties"]
     assert not {"owner", "conversation_id", "source_user_message_id"} & schema.keys()
     accepted = await tools[0].ainvoke(spec().model_dump())
-    assert accepted["call_id"]
+    assert accepted["call_id"] and accepted["status"] == "awaiting_approval"
+    assert g.dials == 0
+    pending = s.get(o, accepted["call_id"])
+    await m.approve(o, pending["id"], pending["version"])
     await until(lambda: g.dials == 1)
     assert not g.closed
     status = await tools[1].ainvoke({"call_id": accepted["call_id"]})
@@ -63,7 +66,7 @@ async def test_real_graph_calls_tool_twice_but_dials_once_and_keeps_chat_free(tm
             }
             reason = "tool_calls"
         else:
-            delta = {"role": "assistant", "content": "전화를 연결하고 있습니다."}
+            delta = {"role": "assistant", "content": "승인 카드를 확인해 주세요."}
             reason = "stop"
         chunks = [
             {
@@ -95,7 +98,10 @@ async def test_real_graph_calls_tool_twice_but_dials_once_and_keeps_chat_free(tm
         agent = build_agent(model, call_tools=build_call_tools(CallContext(m, o, c, u)))
         messages = [{"role": "user", "content": "01000000001로 전화해줘"}]
         result = "".join([t async for t in stream_agent(agent, messages)])
-        assert "연결" in result
+        assert "승인" in result
+        assert g.dials == 0
+        pending = s.active(o)[0]
+        await m.approve(o, pending["id"], pending["version"])
         await until(lambda: g.dials == 1)
         # A second text response runs while the same phone work is alive.
         assert "".join(
@@ -116,7 +122,7 @@ async def test_real_graph_calls_tool_twice_but_dials_once_and_keeps_chat_free(tm
 async def test_stored_call_data_is_bounded_and_unavailable_config_is_tool_error(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     ctx = CallContext(m, o, c, u)
-    a = await m.start(o, c, u, spec())
+    a = await approved_start(m, o, c, u, spec())
     await until(lambda: g.dials == 1)
     await m.stop(o, a["id"])
     await m.wait_idle()
@@ -148,6 +154,9 @@ async def test_chat_task_cancellation_after_acceptance_does_not_stop_call(tmp_pa
     await started.wait()
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+    assert g.dials == 0
+    pending = s.active(o)[0]
+    await m.approve(o, pending["id"], pending["version"])
     await until(lambda: g.dials == 1)
     assert not g.closed
     await m.shutdown()
@@ -157,7 +166,7 @@ async def test_chat_task_cancellation_after_acceptance_does_not_stop_call(tmp_pa
 async def test_main_chat_receives_confirmed_carrier_reason(tmp_path):
     m, g, db, s, o, c, u = manager(tmp_path)
     g.status = "no_answer"
-    await m.start(o, c, u, spec())
+    await approved_start(m, o, c, u, spec())
     await m.wait_idle()
     records = await call_history(CallContext(m, o, c, u))
     saved = json.loads(records.split("\n", 1)[1])

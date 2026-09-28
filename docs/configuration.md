@@ -31,8 +31,9 @@ Live는 client delegation으로 DeepAgents에 요청한다. 통화 업무 도구
 `end_call`, `check_calendar_availability`다. 일정 제목/메일 원문을 상대에게 자동 공개하지 않으며,
 연결/권한이 없거나 결과가 불확실하면 웹 채팅으로 요청자에게 확인한다.
 
-통화는 `CALLS_ENABLED=1`, `CLAWOPS_ACCOUNT_ID`, `CLAWOPS_API_KEY`, `CLAWOPS_FROM_NUMBER`와
-`CALL_ALLOWED_NUMBERS`가 필요하다. `CALL_MAX_SECONDS`는 1~180초다.
+통화는 `CALLS_ENABLED=1`, `CLAWOPS_ACCOUNT_ID`, `CLAWOPS_API_KEY`, `CLAWOPS_FROM_NUMBER`가
+필요하다. 번호별 허용 목록은 사용하지 않으며 `CALL_ALLOWED_NUMBERS`는 제거해도 된다.
+모든 발신 요청은 웹 카드에서 사용자 승인 후 실행된다. `CALL_MAX_SECONDS`는 1~180초다.
 Live와 Realtime은 `CALL_REALTIME_BASE_URL`과 `CALL_REALTIME_API_KEY` 설정을 함께 사용한다.
 `CALL_AUDIO_MODE=live`, `CALL_LIVE_MODEL=gpt-live-1`, `CALL_LIVE_VOICE=marin`으로 활성화한다.
 Azure Live 경로는 `/openai/v1/live/sessions`이며 Realtime의 이벤트와 다르다.

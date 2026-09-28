@@ -7,13 +7,14 @@ async function phoneFixture(page: Page, status = 'connected') {
   const mock = await mockConversations(page)
   mock.conversations.set(cid, { id: cid, title: '통화 테스트', updated_at: new Date().toISOString(), messages: [
     { id: 'user-call', role: 'user', text: '테스트 번호로 전화해 줘', status: 'completed', retryable: false },
-    { id: 'assistant-call', role: 'assistant', text: '전화를 연결하고 있습니다.', status: 'completed', retryable: false },
+    { id: 'assistant-call', role: 'assistant', text: status === 'awaiting_approval' ? '발신 내용을 확인하고 승인해 주세요.' : '전화를 연결하고 있습니다.', status: 'completed', retryable: false },
   ] })
   mock.conversations.set(other, { id: other, title: '다른 대화', updated_at: new Date().toISOString(), messages: [] })
   let call = { id: '00000000-0000-4000-8000-000000000503', conversation_id: cid, source_user_message_id: 'user-call',
+    opening_message: '안녕하세요, 요청을 대신 전하는 AI 도우미예요.', questions: ['통화 가능한가요?'], approval_expires_at: Date.now() / 1000 + 1800,
     destination: '01000000001', subject: '통화 기능 테스트', purpose: '지금 통화가 가능한지 확인하기',
     result_message_id: null as string | null, status, end_report: '{}', outcome: 'pending', reported_summary: '', error_code: null as string | null, stop_requested: false, version: 1 }
-  let stops = 0
+  let stops = 0, approvals = 0
   await page.route('**/api/conversations/*/calls*', route => route.fulfill({ json: { items: route.request().url().includes(cid) ? [call] : [], next_cursor: null } }))
   await page.route('**/api/calls/**', route => {
     const url = route.request().url()
@@ -21,10 +22,14 @@ async function phoneFixture(page: Page, status = 'connected') {
       next_after: Number(new URL(url).searchParams.get('after')), has_more: false,
       terminal: ['ended', 'failed', 'canceled'].includes(call.status) } })
     if (url.endsWith('/active')) return route.fulfill({ json: { items: ['ended', 'failed', 'canceled'].includes(call.status) ? [] : [call] } })
+    if (url.endsWith('/approve')) {
+      expect(route.request().postDataJSON()).toEqual({ expected_version: call.version })
+      approvals++; call = { ...call, status: 'preparing', version: call.version + 1 }
+    }
     if (url.endsWith('/stop')) { stops++; call = { ...call, stop_requested: true, status: 'ending', version: call.version + 1 } }
     return route.fulfill({ json: call })
   })
-  return { mock, get: () => call, set: (patch: Partial<typeof call>) => { call = { ...call, ...patch, version: call.version + 1 } }, stops: () => stops }
+  return { mock, get: () => call, set: (patch: Partial<typeof call>) => { call = { ...call, ...patch, version: call.version + 1 } }, stops: () => stops, approvals: () => approvals }
 }
 
 test('real call card restores, allows chat, and ends only after confirmation', async ({ page }) => {
@@ -252,4 +257,52 @@ test('completed call reports appear once without reloading or losing the draft',
   await page.reload()
   await expect(page.getByText('통화 결과: 오전 10시에 가능합니다.', { exact: true })).toHaveCount(1)
   expect(fixture.mock.calls).toHaveLength(0)
+})
+
+
+test('call approval shows exact plan, restores, and sends only one approval', async ({ page }, testInfo) => {
+  const fixture = await phoneFixture(page, 'awaiting_approval')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await expect(card.getByText('발신 승인 대기', { exact: true })).toBeVisible()
+  await expect(card.getByText('01000000001', { exact: true })).toBeVisible()
+  await expect(card.getByText('통화 가능한가요?', { exact: true })).toBeVisible()
+  await expect(card.getByRole('button', { name: '통화 종료', exact: true })).toHaveCount(0)
+  expect(fixture.approvals()).toBe(0)
+  await page.reload()
+  await expect(card.getByRole('button', { name: '승인하고 전화 걸기', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('call-approval-mobile.png'), fullPage: true })
+  await card.getByRole('button', { name: '승인하고 전화 걸기', exact: true }).click({ clickCount: 2 })
+  await expect(card.getByText('통화 준비 중', { exact: true })).toBeVisible()
+  expect(fixture.approvals()).toBe(1)
+  await expect(card.getByRole('button', { name: '승인하고 전화 걸기', exact: true })).toHaveCount(0)
+})
+
+test('canceling pending call never submits approval', async ({ page }) => {
+  const fixture = await phoneFixture(page, 'awaiting_approval')
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await card.getByRole('button', { name: '취소', exact: true }).click()
+  expect(fixture.approvals()).toBe(0)
+  expect(fixture.stops()).toBe(1)
+})
+
+
+test('expired approval is disabled and an ambiguous response never auto-retries', async ({ page }) => {
+  const fixture = await phoneFixture(page, 'awaiting_approval')
+  fixture.set({ approval_expires_at: Date.now() / 1000 - 1 })
+  await page.goto(`/?conversation=${cid}`)
+  const card = page.getByRole('region', { name: '통화 기능 테스트 통화' })
+  await expect(card.getByRole('button', { name: '승인하고 전화 걸기', exact: true })).toBeDisabled()
+  expect(fixture.approvals()).toBe(0)
+  fixture.set({ approval_expires_at: Date.now() / 1000 + 1800 })
+  await page.reload()
+  let attempts = 0
+  await page.route('**/api/calls/*/approve', route => { attempts++; return route.abort() })
+  await card.getByRole('button', { name: '승인하고 전화 걸기', exact: true }).click()
+  await expect(card.getByText(/승인 결과를 확인하지 못했습니다/)).toBeVisible()
+  await expect(card.getByRole('button', { name: '승인하고 전화 걸기', exact: true })).toBeDisabled()
+  await card.getByRole('button', { name: '다시 확인', exact: true }).click()
+  expect(attempts).toBe(1)
 })

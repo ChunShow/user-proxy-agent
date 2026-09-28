@@ -31,7 +31,6 @@ class CallSettings:
     realtime_base_url: str = field(repr=False)
     realtime_api_key: str = field(repr=False)
     realtime_model: str
-    allowed_numbers: tuple[str, ...] = field(repr=False)
     max_seconds: int = 180
     audio_mode: str = "realtime"
     live_model: str = "gpt-live-1"
@@ -57,10 +56,6 @@ class CallSettings:
                 for k in ("CALL_REALTIME_BASE_URL", "CALL_REALTIME_API_KEY", "CALL_REALTIME_MODEL")
             )
             realtime_url(base, model)
-            allowed = tuple(
-                normalize_number(v.strip())
-                for v in values.get("CALL_ALLOWED_NUMBERS", "").split(",")
-            )
             seconds = int(values.get("CALL_MAX_SECONDS") or "180")
             if not key or not 1 <= seconds <= 180:
                 raise ValueError
@@ -73,6 +68,6 @@ class CallSettings:
                 or voice not in LIVE_VOICES
             ):
                 raise ValueError
-            return cls(carrier, base, key, model, allowed, seconds, mode, live_model, voice)
+            return cls(carrier, base, key, model, seconds, mode, live_model, voice)
         except (OSError, ValueError, TypeError, AttributeError):
             raise ProviderFailure("calls_not_configured") from None

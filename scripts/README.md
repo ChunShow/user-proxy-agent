@@ -39,9 +39,9 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:e2e
 | `check_call_followup.py --run` | 격리 DB·합성 기록으로 실제 모델의 일정/메일 실행안 판단 | 없음 |
 | `check_langfuse_tracing.py --run` | 합성 그래프 실행 기록을 로컬 Langfuse에 저장·재조회 | 없음 |
 | `check_live_calls.py --preflight` | ClawOps 계정·소켓과 음성 모델 연결 검사 | 발신 없음; 외부 API 접근 있음 |
-| `check_live_calls.py --run --to <번호> --request-id <UUID>` | 실행 중인 서버를 통해 허용 번호로 발신 | **실제 전화** |
+| `check_live_calls.py --run --to <번호> --request-id <UUID>` | 채팅 API로 발신 승인 카드 생성 | 이 명령은 승인하지 않음 |
 
-실제 모델과 전화 검사는 과금될 수 있다. 발신 시 대상·목적을 확인하고 허용 번호를 설정한다.
+실제 모델과 전화 검사는 과금될 수 있다. 실제 발신은 웹 카드의 대상·목적을 확인하고 별도 승인해야 한다.
 같은 발신번호를 다른 전화 실험과 동시에 사용하지 않는다. 자세한 상태 해석은
 [통화 안내](../docs/calls.md)를 따른다.
 

@@ -13,6 +13,7 @@ from agent_service.storage import StoreError, now
 
 TERMINAL = frozenset({"ended", "failed", "canceled"})
 ACTIVE_SQL = "status NOT IN ('ended','failed','canceled')"
+APPROVAL_SECONDS = 30 * 60
 
 
 class CallSpec(BaseModel):
@@ -62,6 +63,10 @@ def migrate(db):
             version INTEGER NOT NULL
         );
     """)
+    columns = {r["name"] for r in db.execute("PRAGMA table_info(phone_calls)")}
+    for name in ("approval_expires_at", "approved_at"):
+        if name not in columns:
+            db.execute(f"ALTER TABLE phone_calls ADD COLUMN {name} REAL")
     from agent_service.calls.live_store import migrate as migrate_live
 
     migrate_live(db)
@@ -87,6 +92,8 @@ def view(row):
             "error_code",
             "version",
             "stop_requested",
+            "approval_expires_at",
+            "approved_at",
         )
     }
     result["stop_requested"] = bool(result["stop_requested"])
@@ -134,13 +141,47 @@ class CallStore:
 
     def get(self, owner, call_id):
         with self.db.connection() as db:
+            self._expire_pending(db)
             return self._view(db, self._get(db, call_id, owner))
+
+    def _expire_pending(self, db):
+        if not db.in_transaction:
+            db.execute("BEGIN IMMEDIATE")
+        rows = db.execute(
+            "SELECT id FROM phone_calls WHERE status='awaiting_approval' "
+            "AND approval_expires_at<=?", (time.time(),)
+        ).fetchall()
+        for row in rows:
+            self._update(db, row["id"], {
+                "status": "canceled", "outcome": "canceled",
+                "error_code": "call_approval_expired",
+            })
+
+    def approve(self, owner, call_id, expected_version):
+        # Expiry must commit even when the approval itself is rejected.
+        self.get(owner, call_id)
+        with self.db.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = self._get(db, call_id, owner)
+            self.db._conversation(db, owner, row["conversation_id"])
+            if row["approved_at"] is not None:
+                return view(row), False
+            if (row["status"] != "awaiting_approval" or row["stop_requested"]
+                    or row["approval_expires_at"] <= time.time()):
+                raise StoreError("call_approval_inactive")
+            if row["version"] != expected_version:
+                raise StoreError("call_approval_changed")
+            row = self._update(db, call_id, {
+                "status": "preparing", "approved_at": time.time(),
+            })
+            return view(row), True
 
     def register(self, owner, cid, uid, spec):
         payload = spec.model_dump_json()
         fingerprint = hashlib.sha256(payload.encode()).hexdigest()
         with self.db.connection() as db:
             db.execute("BEGIN IMMEDIATE")
+            self._expire_pending(db)
             self.db._conversation(db, owner, cid)
             anchor = db.execute(
                 "SELECT 1 FROM messages WHERE id=? AND conversation_id=? AND role='user'",
@@ -162,8 +203,10 @@ class CallStore:
             db.execute(
                 """INSERT INTO phone_calls
                 (id,owner_id,conversation_id,source_user_message_id,spec,fingerprint,
-                 created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)""",
-                (call_id, owner, cid, uid, payload, fingerprint, timestamp, timestamp),
+                 created_at,updated_at,status,approval_expires_at)
+                 VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (call_id, owner, cid, uid, payload, fingerprint, timestamp, timestamp,
+                 "awaiting_approval", time.time() + APPROVAL_SECONDS),
             )
             row = self._get(db, call_id)
             self._event(db, row)
@@ -189,6 +232,7 @@ class CallStore:
             "end_report",
             "metrics",
             "error_code",
+            "approved_at",
         }
         if not changes or not set(changes) <= allowed:
             raise ValueError("invalid_call_update")
@@ -220,6 +264,7 @@ class CallStore:
             row = self._get(db, call_id)
             if (
                 row["status"] != "preparing"
+                or row["approved_at"] is None
                 or row["stop_requested"]
                 or row["dial_attempted_at"] is not None
             ):
@@ -233,10 +278,16 @@ class CallStore:
             row = self._get(db, call_id, owner)
             if row["status"] in TERMINAL or row["stop_requested"]:
                 return view(row)
+            if row["status"] == "awaiting_approval":
+                return view(self._update(db, call_id, {
+                    "stop_requested": 1, "status": "canceled", "outcome": "canceled",
+                    "error_code": "call_approval_canceled",
+                }))
             return view(self._update(db, call_id, {"stop_requested": 1}))
 
     def active(self, owner=None, *, raw=False):
         with self.db.connection() as db:
+            self._expire_pending(db)
             sql, args = f"SELECT * FROM phone_calls WHERE {ACTIVE_SQL}", []
             if owner is not None:
                 sql += " AND owner_id=?"
@@ -259,6 +310,7 @@ class CallStore:
                 raise StoreError("invalid_request", 422) from None
         with self.db.connection() as db:
             self.db._conversation(db, owner, cid)
+            self._expire_pending(db)
             sql = "SELECT * FROM phone_calls WHERE owner_id=? AND conversation_id=?"
             args = [owner, cid]
             if position:

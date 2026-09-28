@@ -1,6 +1,6 @@
 import { ApiError } from '../api/errors'
 import { useEffect, useRef, useState } from 'react'
-import { activeCalls, answerCall, isActiveCall, listCalls, mergeCalls, refreshCall, stopCall } from './calls'
+import { activeCalls, answerCall, approveCall, isActiveCall, listCalls, mergeCalls, refreshCall, stopCall } from './calls'
 import type { CallConfirmation, PhoneCall } from './calls'
 
 export default function useCalls(conversationId: string | null, enabled: boolean) {
@@ -58,15 +58,19 @@ export default function useCalls(conversationId: string | null, enabled: boolean
     return () => { alive = false; controller.abort(); clearTimeout(timer); document.removeEventListener('visibilitychange', resume) }
   }, [conversationId, enabled])
 
-  async function act(id: string, action: 'stop' | 'refresh') {
+  async function act(id: string, action: 'stop' | 'refresh' | 'approve', expectedVersion?: number) {
     if (pendingIds.current.has(id)) return
     pendingIds.current.add(id); setPending([...pendingIds.current]); revision.current++
     setActionErrors(previous => ({ ...previous, [id]: '' }))
     try {
-      const call = await (action === 'stop' ? stopCall(id) : refreshCall(id))
+      const call = await (action === 'approve' ? approveCall(id, expectedVersion!) : action === 'stop' ? stopCall(id) : refreshCall(id))
       if (mounted.current) setRecords(previous => mergeCalls(previous, [call]))
-    } catch {
-      if (mounted.current) setActionErrors(previous => ({ ...previous, [id]: action === 'stop'
+    } catch (cause) {
+      if (mounted.current) setActionErrors(previous => ({ ...previous, [id]: action === 'approve'
+        ? cause instanceof ApiError && ['call_approval_inactive', 'call_approval_changed'].includes(cause.code)
+          ? '승인할 수 없는 요청입니다. 현재 카드를 확인하고 필요하면 채팅에서 다시 요청해 주세요.'
+          : '승인 결과를 확인하지 못했습니다. 다시 확인을 눌러 현재 상태를 확인해 주세요.'
+        : action === 'stop'
         ? '종료 요청 결과를 확인하지 못했습니다. 다시 확인해 주세요.' : '상태를 확인하지 못했습니다. 다시 확인해 주세요.' }))
     } finally {
       revision.current++
@@ -103,6 +107,7 @@ export default function useCalls(conversationId: string | null, enabled: boolean
     calls: Object.values(records).filter(c => c.conversation_id === conversationId),
     otherActive: activeIds.map(id => records[id]).filter(c => c && isActiveCall(c) && c.conversation_id !== conversationId),
     error, actionErrors, pending, answer,
+    approve: (id: string, version: number) => { void act(id, 'approve', version) },
     stop: (id: string) => { void act(id, 'stop') },
     refresh: (id: string) => { void act(id, 'refresh') },
     reload: () => kick.current(),
