@@ -12,7 +12,10 @@ export class CallAudioPlayer {
   context: AudioContext
   private tails = { caller: 0, assistant: 0 }
   private sources = new Map<AudioBufferSourceNode, 'caller' | 'assistant'>()
-  constructor() { this.context = new AudioContext() }
+  // Join telephone PCM in its native rate. Resampling each tiny source at the
+  // device rate creates boundary artifacts; the browser resamples this complete
+  // output stream once when sending it to the device instead.
+  constructor() { this.context = new AudioContext({ sampleRate: 8000 }) }
   async resume() { await this.context.resume() }
   play(track: 'caller' | 'assistant', payload: string) {
     if (payload.length > 11000 || this.context.state !== 'running') return
@@ -24,10 +27,13 @@ export class CallAudioPlayer {
     buffer.copyToChannel(decodeMulaw(raw), 0)
     const source = this.context.createBufferSource()
     source.buffer = buffer; source.connect(this.context.destination)
-    const start = Math.max(this.context.currentTime + 0.025, this.tails[track])
+    // Reserve jitter headroom only at startup / a true underrun. Reapplying a
+    // minimum delay to every packet inserts gaps even when audio is queued.
+    const start = this.tails[track] >= this.context.currentTime + 0.02
+      ? this.tails[track] : Math.ceil((this.context.currentTime + 0.12) * 8000) / 8000
     this.sources.set(source, track)
     source.onended = () => { source.disconnect(); this.sources.delete(source) }
-    source.start(start); this.tails[track] = start + buffer.duration
+    source.start(start); this.tails[track] = (Math.round(start * 8000) + raw.length) / 8000
   }
   clear(track: 'caller' | 'assistant') {
     for (const [source, channel] of this.sources) if (channel === track) {
