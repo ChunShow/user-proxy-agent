@@ -18,6 +18,7 @@ def test_anonymous_navigation_gets_form_without_http_auth_popup():
         assert "<form" in r.text and 'type="password"' in r.text
         assert "test!" not in r.text
         assert r.headers["cache-control"] == "no-store"
+        assert r.headers["referrer-policy"] == "same-origin"
         assert (
             c.get("/_access/verify", headers={"x-forwarded-uri": "/api/health"}).status_code == 401
         )

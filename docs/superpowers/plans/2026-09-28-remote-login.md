@@ -36,3 +36,15 @@
 변경 완료: 인증·세션 검사 8개 및 Ruff 통과. 공유 주소에서 기존 비밀번호와 기존 쿠키의
 거부, 새 비밀번호 로그인 후 UI/API 접근 성공을 확인했다. 비공개 설정만 새 값으로 갱신했고
 인증 프로세스만 재시작했다. 제품 서버와 Cloudflare 주소는 유지했다.
+
+## 폼 제출 Origin 오류 수정
+
+사용자가 비밀번호 제출 후 Forbidden origin을 보고했다. 로그인 응답의 no-referrer 정책은
+일반 폼 POST의 Origin을 null로 만들고 게이트웨이가 이를 거부한다. same-origin으로 바꾸어
+정상 동일 출처 폼의 Origin을 유지한다. 외부/null Origin 거부는 유지하며 정책 회귀 검사와
+공개 주소 로그인 검사를 수행한다.
+
+수정 검증: 인증·세션 테스트 8개와 Ruff 통과. 공개 주소 응답의 same-origin 정책, 로그인
+후 UI/API 200, 외부/null Origin 403을 확인했다. 실제 Chrome 폼 제출 후 서비스 화면과
+서버 연결됨 표시까지 확인했다. 앞서 기록한 Chrome 제출 차단도 이번 수정 후 재현되지 않았다.
+참고: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy
