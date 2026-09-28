@@ -313,3 +313,7 @@
 .phone-approval-details ul { margin: 0; padding-left: 20px; }
 .phone-actions .phone-approve { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .phone-state.phone-awaiting_approval { color: var(--ink); background: var(--soft); }
+
+.simulation-notice { flex-shrink: 0; margin: 0; padding: 10px 24px; border-block: 1px solid var(--line); background: var(--canvas); color: var(--muted); font-size: 13px; line-height: 1.7; }
+.simulation-notice strong { color: var(--ink); font-weight: 600; }
+.simulation-notice span { display: inline-block; margin-left: 12px; }

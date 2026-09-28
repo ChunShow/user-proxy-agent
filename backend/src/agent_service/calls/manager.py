@@ -11,17 +11,16 @@ from types import SimpleNamespace
 import httpx
 from starlette.concurrency import run_in_threadpool
 
+from agent_service.calls.audio_gateway import ModelAudioGateway
 from agent_service.calls.bridge import NativeAudioBridge
 from agent_service.calls.carrier import ClawOpsControl
 from agent_service.calls.connection import AgentConnection
 from agent_service.calls.delegation import DelegationCoordinator
 from agent_service.calls.instructions import InstructionStore
 from agent_service.calls.listening import AudioHub, ObservedMedia
-from agent_service.calls.live import LiveAudioSession
 from agent_service.calls.live_bridge import LiveBridge
 from agent_service.calls.live_store import LiveStore
 from agent_service.calls.preflight import check_local_sender
-from agent_service.calls.realtime import AzureAudioSession
 from agent_service.calls.settings import CallSettings, normalize_number
 from agent_service.calls.store import TERMINAL, CallSpec
 from agent_service.calls.types import TERMINAL as CARRIER_TERMINAL
@@ -29,8 +28,10 @@ from agent_service.calls.types import DialRejected, DialUncertain, ProviderFailu
 from agent_service.storage import StoreError
 
 
-class Gateway(ClawOpsControl):
+class Gateway(ModelAudioGateway, ClawOpsControl):
     def __init__(self, settings, client):
+        if settings.carrier is None:
+            raise ProviderFailure("real_carrier_not_configured")
         super().__init__(settings.carrier, client)
         self.config = settings
 
@@ -38,33 +39,8 @@ class Gateway(ClawOpsControl):
         await check_local_sender()
         return await super().preflight()
 
-    def audio(self, spec):
-        if self.config.audio_mode == "live":
-            return LiveAudioSession(
-                self.config.realtime_base_url,
-                self.config.realtime_api_key,
-                self.config.live_model,
-                voice=self.config.live_voice,
-                task=json.dumps(spec.model_dump(exclude={"destination"}), ensure_ascii=False),
-            )
-        return AzureAudioSession(
-            self.config.realtime_base_url,
-            self.config.realtime_api_key,
-            self.config.realtime_model,
-            task=json.dumps(spec.model_dump(exclude={"destination"}), ensure_ascii=False),
-        )
-
     def connection(self):
         return AgentConnection(self.settings)
-
-    def bridge(self, model, spec):
-        if self.config.audio_mode == "live":
-            return LiveBridge(
-                model, listen_first=spec.listen_first, opening_message=spec.opening_message
-            )
-        return NativeAudioBridge(
-            model, listen_first=spec.listen_first, opening_message=spec.opening_message
-        )
 
 
 @asynccontextmanager

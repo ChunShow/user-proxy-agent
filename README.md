@@ -11,6 +11,7 @@
 - 통화 중 채팅 질문·답변과 추가 지시, 종료 후 결과 자동 보고
 - Google Calendar·Gmail 조회, 사용자 확인 후 일정 등록·메일 발송
 - 선택적 로컬 Langfuse 실행 추적
+- 실제 발신 없는 독립 가상 ARS와 디버그 웹 (macOS 로컬 음성)
 
 메인 채팅과 업무 판단은 설정한 텍스트 모델이, 전화 음성 대화는 `gpt-live-1`이 맡는다.
 Live가 업무 판단을 DeepAgents에 위임하며, 별도 STT/TTS 서비스는 붙이지 않는다.
@@ -81,6 +82,7 @@ Google은 본인 OAuth 설정과 웹의 계정 동의가 필요하다. 일정 �
 - [모델·Google·Langfuse 설정](docs/configuration.md)
 - [Google OAuth 설치 안내](docs/google-setup.md)
 - [통화 운영·상태·진단](docs/calls.md)
+- [ClawOps 없이 가상 ARS로 시험하기](docs/virtual-ars.md)
 - [로컬 실행·백업·복구](docs/local-recovery.md)
 
 ## 개발과 검증

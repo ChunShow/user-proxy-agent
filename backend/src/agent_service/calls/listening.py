@@ -82,7 +82,8 @@ async def listen(socket: WebSocket, call_id: UUID):
         return
     manager = socket.app.state.calls
     owner = await run_in_threadpool(
-        socket.app.state.store.owner_for_token, socket.cookies.get(COOKIE)
+        socket.app.state.store.owner_for_token,
+        socket.cookies.get(getattr(socket.app.state, "session_cookie", COOKIE)),
     )
     queue, hub = None, None
     try:
@@ -116,7 +117,8 @@ async def listen(socket: WebSocket, call_id: UUID):
             while True:
                 await asyncio.sleep(10)
                 current = await run_in_threadpool(
-                    socket.app.state.store.owner_for_token, socket.cookies.get(COOKIE)
+                    socket.app.state.store.owner_for_token,
+                    socket.cookies.get(getattr(socket.app.state, "session_cookie", COOKIE)),
                 )
                 row = await manager.get(owner, str(call_id))
                 if current != owner or row["status"] != "connected" or row["stop_requested"]:

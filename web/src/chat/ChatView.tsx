@@ -40,6 +40,7 @@ interface Props {
 export default function ChatView({ messages, composer, onRetry, onConversationsChanged,
   conversationId, conversations, onNewConversation, onSelectConversation, listError, hasMoreConversations,
   onMoreConversations, onReloadList, loading, loadError, onReload, hasMoreMessages, onMoreMessages, pageError, remoteBusy, afterMessage, activeCall, callError }: Props) {
+  const simulation = import.meta.env.VITE_SIMULATION === '1'
   const sidebar = useSidebarWidth()
   const dialog = useRef<HTMLDialogElement>(null)
   const menuButton = useRef<HTMLButtonElement>(null)
@@ -93,8 +94,9 @@ export default function ChatView({ messages, composer, onRetry, onConversationsC
           <button ref={menuButton} className="mobile-menu-button" aria-label="메뉴 열기" aria-expanded={menuOpen} onClick={() => { setMenuOpen(true); dialog.current?.showModal() }}><Icon name="menu" /></button>
           <h1>User Proxy Agent</h1>
         </div>
-        <div className="header-tools"><ConnectedApps /><ConnectionStatus /></div>
+        <div className="header-tools">{!simulation && <ConnectedApps />}<ConnectionStatus /></div>
       </header>
+      {simulation && <p className="simulation-notice"><strong>가상 통화</strong> · 실제 전화 발신 없음 <span>시험 번호 01000000001</span></p>}
       {activeCall}
       <div className={`chat-workspace ${isEmpty ? 'is-start' : ''}`}>
         <div className="conversation-scroll" ref={scroller} onScroll={() => {

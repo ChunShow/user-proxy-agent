@@ -27,7 +27,7 @@ def normalize_number(value: str) -> str:
 
 @dataclass(frozen=True)
 class CallSettings:
-    carrier: ClawOpsSettings = field(repr=False)
+    carrier: ClawOpsSettings | None = field(repr=False)
     realtime_base_url: str = field(repr=False)
     realtime_api_key: str = field(repr=False)
     realtime_model: str
@@ -37,7 +37,7 @@ class CallSettings:
     live_voice: str = "marin"
 
     @classmethod
-    def load(cls, path=None, *, environ=None):
+    def load(cls, path=None, *, environ=None, simulation=False):
         env = os.environ if environ is None else environ
         file = Path(path or env.get("AGENT_SERVICE_ENV_FILE") or ROOT / ".env")
         try:
@@ -45,10 +45,14 @@ class CallSettings:
             values.update(env)
             if values.get("CALLS_ENABLED") != "1":
                 raise ProviderFailure("calls_not_configured")
-            carrier = ClawOpsSettings(
-                *(
-                    values.get(k, "")
-                    for k in ("CLAWOPS_ACCOUNT_ID", "CLAWOPS_API_KEY", "CLAWOPS_FROM_NUMBER")
+            carrier = (
+                None
+                if simulation
+                else ClawOpsSettings(
+                    *(
+                        values.get(k, "")
+                        for k in ("CLAWOPS_ACCOUNT_ID", "CLAWOPS_API_KEY", "CLAWOPS_FROM_NUMBER")
+                    )
                 )
             )
             base, key, model = (

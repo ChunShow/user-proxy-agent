@@ -24,7 +24,7 @@ def check_mutation(request: Request):
 async def require_owner(request: Request) -> str:
     owner = await run_in_threadpool(
         request.app.state.store.owner_for_token,
-        request.cookies.get(COOKIE),
+        request.cookies.get(getattr(request.app.state, "session_cookie", COOKIE)),
     )
     if owner is None:
         raise HTTPException(401, "session_expired")
@@ -35,12 +35,15 @@ async def require_owner(request: Request) -> str:
 async def session(request: Request):
     check_mutation(request)
     store = request.app.state.store
-    owner = await run_in_threadpool(store.owner_for_token, request.cookies.get(COOKIE))
+    owner = await run_in_threadpool(
+        store.owner_for_token,
+        request.cookies.get(getattr(request.app.state, "session_cookie", COOKIE)),
+    )
     response = Response(status_code=204, headers={"Cache-Control": "no-store"})
     if owner is None:
         token = await run_in_threadpool(store.issue_session)
         response.set_cookie(
-            COOKIE,
+            getattr(request.app.state, "session_cookie", COOKIE),
             token,
             httponly=True,
             samesite="strict",

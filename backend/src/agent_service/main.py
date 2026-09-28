@@ -34,7 +34,12 @@ class HealthResponse(BaseModel):
     service: Literal["agent-service"] = "agent-service"
 
 
-def create_app(*, database_path: Path | None = None) -> FastAPI:
+def create_app(
+    *,
+    database_path: Path | None = None,
+    call_manager_factory=CallManager,
+    session_cookie="proxy_session",
+) -> FastAPI:
     install_access_filter()
     store = ConversationStore(
         database_path
@@ -61,8 +66,9 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
             await run_in_threadpool(shutdown_tracing)
 
     app = FastAPI(title="user proxy agent", version="0.1.0", lifespan=lifespan)
+    app.state.session_cookie = session_cookie
     app.state.store = store
-    app.state.calls = CallManager(CallStore(store))
+    app.state.calls = call_manager_factory(CallStore(store))
     app.state.integrations = GoogleManager(store)
     app.state.calls.integrations = app.state.integrations
     app.state.actions = ActionManager(store, app.state.integrations)

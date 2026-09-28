@@ -76,3 +76,11 @@ uv run --project backend python scripts/check_live_korean.py --run --name korean
 - [재생 중단·재개 검증](../docs/superpowers/plans/2026-09-27-live-barge-in-control.md)
 
 `live_korean_metrics.py`, `live_dialogue_cases.py`는 평가 보조 모듈이며 독립 실행 명령이 아니다.
+
+## 가상 ARS 개발 서버
+
+`backend/.venv/bin/python scripts/dev_simulator.py`를 저장소 루트에서 실행한다.
+독립 ARS API(9020), 디버그 백엔드(9011), 웹(5181)을 함께 시작/종료한다.
+`prepare_virtual_ars.py`는 macOS Yuna로 안내 음성을 생성하며 별도 TTS API가 필요 없다.
+기존 모델 API 호출 비용은 발생한다. 실제 전화·Google 연결은 사용하지 않는다.
+[자세한 실행 및 API 안내](../docs/virtual-ars.md).
